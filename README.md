@@ -8,10 +8,11 @@ App de bolsillo para anotar lo que entra y lo que sale del consultorio.
 
 Una PWA: se instala en la pantalla de inicio y se abre a pantalla completa como cualquier app, pero por dentro es una página web. No pasa por Google Play, no necesita cuenta de desarrollador, y funciona sin internet.
 
+- **Dos secciones separadas: Consultorio y Personal.** Cada una con sus movimientos, sus categorías y sus totales. No se suman nunca. El acento de color cambia con la sección para que no haya duda de dónde estás anotando
 - Capturar toma tres toques: monto, tipo, categoría
 - Resumen del mes con desglose por categoría
 - Historial por día
-- Respaldo a archivo, y restauración desde archivo
+- Respaldo a archivo (las dos secciones en uno), y restauración desde archivo
 - Exportación a CSV que Excel en español abre bien
 
 ## Instalar en Android
@@ -38,7 +39,7 @@ npm test           # 38 comprobaciones del flujo completo, con DOM e IndexedDB f
 npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 ```
 
-`npm test` monta la app en jsdom y ejecuta el recorrido real: capturar, guardar, totales, historial, respaldar, borrar, restaurar. Si tocas `app.js`, córrelo antes de publicar.
+`npm test` monta la app en jsdom y ejecuta el recorrido real en las dos secciones: capturar, guardar, totales, historial, respaldar, borrar, restaurar. Vigila sobre todo que **Consultorio y Personal no se mezclen**. Si tocas `app.js`, córrelo antes de publicar.
 
 ## Detalles que importan
 

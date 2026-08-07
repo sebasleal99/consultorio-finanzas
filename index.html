@@ -18,6 +18,12 @@
 </head>
 <body>
 
+<!-- ══ ÁMBITO — consultorio vs. personal ═════════════ -->
+<header class="ambitobar" role="radiogroup" aria-label="Sección">
+  <button type="button" class="amb is-on" data-amb="consultorio" role="radio" aria-checked="true">Consultorio</button>
+  <button type="button" class="amb" data-amb="personal" role="radio" aria-checked="false">Personal</button>
+</header>
+
 <!-- ══ CAPTURAR ══════════════════════════════════════ -->
 <section class="screen" id="screen-capturar" data-screen="capturar">
   <header class="topbar">
@@ -111,6 +117,7 @@
 
   <h2 class="subhead">Respaldo</h2>
   <p class="note">Tus movimientos viven <strong>solo en este teléfono</strong>. Si lo pierdes o borras la app, se van con él. Respalda seguido — cada domingo es buena costumbre.</p>
+  <p class="note">El respaldo incluye <strong>las dos secciones</strong>, Consultorio y Personal, en un solo archivo.</p>
   <div class="btnrow">
     <button type="button" class="btn btn-primary" id="exportJson">Respaldar</button>
     <button type="button" class="btn" id="exportCsv">Exportar CSV</button>
@@ -121,22 +128,23 @@
   </label>
   <p class="note" id="respaldoNota"></p>
 
-  <h2 class="subhead">Categorías de ingreso</h2>
+  <h2 class="subhead">Categorías de ingreso <span class="ambtag" id="ambTag1"></span></h2>
   <div class="catedit" id="catIn"></div>
   <form class="addcat" data-tipo="ingreso">
     <input type="text" placeholder="Agregar categoría" maxlength="24" required>
     <button type="submit" class="btn btn-sm">Agregar</button>
   </form>
 
-  <h2 class="subhead">Categorías de egreso</h2>
+  <h2 class="subhead">Categorías de egreso <span class="ambtag" id="ambTag2"></span></h2>
   <div class="catedit" id="catOut"></div>
   <form class="addcat" data-tipo="egreso">
     <input type="text" placeholder="Agregar categoría" maxlength="24" required>
     <button type="submit" class="btn btn-sm">Agregar</button>
   </form>
+  <p class="note">Cada sección tiene sus propias categorías. Estas son las de <strong id="ambNombre">Consultorio</strong>; para editar las otras, cambia de sección arriba.</p>
 
   <h2 class="subhead">Zona de riesgo</h2>
-  <button type="button" class="btn btn-danger" id="borrarTodo">Borrar todos los movimientos</button>
+  <button type="button" class="btn btn-danger" id="borrarTodo">Borrar movimientos de <span id="ambNombre2">Consultorio</span></button>
 
   <p class="note colophon">
     Consultorio · Ingresos y Egresos<br>

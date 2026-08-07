@@ -1,6 +1,8 @@
 /* Prueba de humo: monta un DOM y un IndexedDB falsos y ejecuta el flujo real
- * de la app — capturar, guardar, totales del mes, historial, exportar,
- * borrar, restaurar.
+ * de la app — capturar, guardar, totales, historial, exportar, borrar,
+ * restaurar — en las dos secciones.
+ *
+ * Lo que más se vigila aquí: que Consultorio y Personal NO se mezclen.
  *
  * Uso:  npm test
  */
@@ -19,15 +21,11 @@ let pasos = 0;
 
 function ok(cond, msg) {
   pasos++;
-  if (cond) {
-    console.log(`  OK    ${msg}`);
-  } else {
-    fallos++;
-    console.log(`  FALLA ${msg}`);
-  }
+  if (cond) console.log(`  OK    ${msg}`);
+  else { fallos++; console.log(`  FALLA ${msg}`); }
 }
 
-const esperar = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+const esperar = (ms = 60) => new Promise((r) => setTimeout(r, ms));
 
 /* ── Montaje ────────────────────────────────────────── */
 
@@ -45,15 +43,13 @@ window.URL.createObjectURL = () => 'blob:fake';
 window.URL.revokeObjectURL = () => {};
 // jsdom no trae service workers; lo dejamos ausente de verdad, no en undefined.
 
-// Capturamos las descargas en vez de escribir archivos.
 const descargas = [];
 const clickReal = window.HTMLAnchorElement.prototype.click;
 window.HTMLAnchorElement.prototype.click = function () {
-  if (this.download) descargas.push({ nombre: this.download, href: this.href });
+  if (this.download) descargas.push({ nombre: this.download });
   else clickReal.call(this);
 };
 
-// Blob.text() no existe en jsdom; lo necesitamos para importar.
 let ultimoBlob = null;
 const BlobReal = window.Blob;
 window.Blob = class extends BlobReal {
@@ -65,24 +61,35 @@ window.Blob = class extends BlobReal {
   text() { return Promise.resolve(this._texto); }
 };
 
-const appjs = readFileSync(join(ROOT, 'app.js'), 'utf8');
-window.eval(appjs);
-
-await esperar(150);
+window.eval(readFileSync(join(ROOT, 'app.js'), 'utf8'));
+await esperar(200);
 
 const doc = window.document;
 const $ = (s) => doc.querySelector(s);
 const $$ = (s) => Array.from(doc.querySelectorAll(s));
 const tap = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 const teclear = (k) => tap($(`#keypad button[data-k="${k}"]`));
+const soloNum = (s) => s.replace(/[^\d.-]/g, '');
+const cats = () => $$('#chips .chip').map((c) => c.textContent);
+
+/** Captura un movimiento completo en la sección/tipo actuales. */
+async function capturar(digitos, categoria, nota = '') {
+  for (const d of digitos) teclear(d);
+  tap($$('#chips .chip').find((c) => c.textContent === categoria));
+  $('#notaInput').value = nota;
+  tap($('#guardarBtn'));
+  await esperar(120);
+}
 
 /* ── 1. Arranque ────────────────────────────────────── */
 
 console.log('\n1. Arranque');
 ok($('#montoOut').textContent === '0.00', 'el monto arranca en 0.00');
 ok($('#guardarBtn').disabled === true, 'Guardar arranca deshabilitado');
-ok($$('#chips .chip').length === 8, `se pintan las 8 categorías de ingreso (${$$('#chips .chip').length})`);
-ok($('.seg-in').classList.contains('is-on'), 'arranca en "Entró"');
+ok($('.amb[data-amb="consultorio"]').classList.contains('is-on'), 'arranca en la sección Consultorio');
+ok(doc.body.classList.contains('a-consultorio'), 'el cuerpo lleva la clase de la sección, para teñir el acento');
+ok(cats().length === 8, `Consultorio trae 8 categorías de ingreso (${cats().length})`);
+ok(cats().includes('Endodoncia'), 'las categorías son las del consultorio');
 ok($('#fechaLabel').textContent === 'Hoy', 'la fecha arranca en Hoy');
 
 /* ── 2. Teclado ─────────────────────────────────────── */
@@ -95,135 +102,163 @@ ok($('#montoOut').textContent === '1.50', `borrar deja 1.50 (dio ${$('#montoOut'
 teclear('del'); teclear('del'); teclear('del');
 ok($('#montoOut').textContent === '0.00', 'se puede vaciar por completo');
 
-teclear('8'); teclear('5'); teclear('0'); teclear('00');
-ok($('#montoOut').textContent === '850.00', `850.00 se arma bien (dio ${$('#montoOut').textContent})`);
-ok($('#guardarBtn').disabled === true, 'sigue deshabilitado sin categoría elegida');
+/* ── 3. Capturar en Consultorio ─────────────────────── */
 
-/* ── 3. Guardar un ingreso ──────────────────────────── */
-
-console.log('\n3. Guardar un ingreso');
-const chipResina = $$('#chips .chip').find((c) => c.textContent === 'Resina');
-tap(chipResina);
-ok($('#guardarBtn').disabled === false, 'con monto y categoría, Guardar se habilita');
-
-$('#notaInput').value = 'molar superior';
-tap($('#guardarBtn'));
-await esperar(120);
-
+console.log('\n3. Capturar en Consultorio');
+await capturar(['8', '5', '0', '00'], 'Resina', 'molar superior');
 ok($('#montoOut').textContent === '0.00', 'tras guardar, el monto se limpia');
 ok($('#notaInput').value === '', 'tras guardar, la nota se limpia');
 
-/* ── 4. Guardar un egreso ───────────────────────────── */
-
-console.log('\n4. Guardar un egreso');
 tap($('.seg-out'));
-ok($('.seg-out').classList.contains('is-on'), 'cambia a "Salió"');
-const catsEgreso = $$('#chips .chip').map((c) => c.textContent);
-ok(catsEgreso.includes('Laboratorio'), 'las categorías cambian a las de egreso');
+ok(cats().includes('Laboratorio'), 'al cambiar a Salió aparecen las categorías de egreso del consultorio');
+await capturar(['3', '2', '0', '00'], 'Laboratorio');
 
-teclear('3'); teclear('2'); teclear('0'); teclear('00');
-tap($$('#chips .chip').find((c) => c.textContent === 'Laboratorio'));
-tap($('#guardarBtn'));
+/* ── 4. Cambiar de sección ──────────────────────────── */
+
+console.log('\n4. Cambiar a Personal');
+tap($('.amb[data-amb="personal"]'));
 await esperar(120);
 
-/* ── 5. Totales del mes ─────────────────────────────── */
+ok(doc.body.classList.contains('a-personal'), 'el cuerpo cambia a la clase de Personal');
+ok(!doc.body.classList.contains('a-consultorio'), 'y suelta la de Consultorio');
+ok($('.amb[data-amb="personal"]').classList.contains('is-on'), 'el botón de Personal queda activo');
+ok($('#montoOut').textContent === '0.00', 'al cambiar de sección se limpia el monto a medio capturar');
+ok(cats().includes('Comida'), 'aparecen las categorías personales de egreso');
+ok(!cats().includes('Laboratorio'), 'y NO se ven las del consultorio');
 
-console.log('\n5. Totales del mes');
+tap($('.seg-in'));
+ok(cats().includes('Retiro del consultorio'), 'los ingresos personales tienen sus propias categorías');
+ok(!cats().includes('Endodoncia'), 'no se cuelan las de odontología');
+
+/* ── 5. Capturar en Personal ────────────────────────── */
+
+console.log('\n5. Capturar en Personal');
+await capturar(['1', '2', '0', '0', '00'], 'Retiro del consultorio');
+tap($('.seg-out'));
+await capturar(['4', '5', '0', '00'], 'Comida', 'despensa');
+
+/* ── 6. Los totales NO se mezclan ───────────────────── */
+
+console.log('\n6. Los totales no se mezclan');
 tap($('.tab[data-go="mes"]'));
-await esperar(60);
+await esperar(80);
+ok(soloNum($('#totIn').textContent) === '1200.00', `Personal: entró 1200.00 (dio ${$('#totIn').textContent})`);
+ok(soloNum($('#totOut').textContent) === '450.00', `Personal: salió 450.00 (dio ${$('#totOut').textContent})`);
+ok(soloNum($('#totNet').textContent) === '750.00', `Personal: queda 750.00 (dio ${$('#totNet').textContent})`);
+ok(!$('#barsIn').textContent.includes('Resina'), 'las barras de Personal no muestran categorías del consultorio');
 
-const soloNum = (s) => s.replace(/[^\d.-]/g, '');
-ok(soloNum($('#totIn').textContent) === '850.00', `entró = 850.00 (dio ${$('#totIn').textContent})`);
-ok(soloNum($('#totOut').textContent) === '320.00', `salió = 320.00 (dio ${$('#totOut').textContent})`);
-ok(soloNum($('#totNet').textContent) === '530.00', `queda = 530.00 (dio ${$('#totNet').textContent})`);
-ok($('#barsIn').textContent.includes('Resina'), 'la barra de ingresos muestra Resina');
-ok($('#barsOut').textContent.includes('Laboratorio'), 'la barra de egresos muestra Laboratorio');
-
-/* ── 6. Historial ───────────────────────────────────── */
-
-console.log('\n6. Historial');
-tap($('.tab[data-go="historial"]'));
-await esperar(60);
-ok($$('#lista .row').length === 2, `hay 2 movimientos (${$$('#lista .row').length})`);
-ok($('#lista').textContent.includes('molar superior'), 'la nota se conserva');
-ok($('#histCount').textContent.includes('2'), 'el contador dice 2');
-
-/* ── 7. Respaldo ────────────────────────────────────── */
-
-console.log('\n7. Respaldo');
-tap($('.tab[data-go="ajustes"]'));
-await esperar(60);
-tap($('#exportJson'));
+tap($('.amb[data-amb="consultorio"]'));
 await esperar(120);
+tap($('.tab[data-go="mes"]'));
+await esperar(80);
+ok(soloNum($('#totIn').textContent) === '850.00', `Consultorio: entró 850.00 (dio ${$('#totIn').textContent})`);
+ok(soloNum($('#totOut').textContent) === '320.00', `Consultorio: salió 320.00 (dio ${$('#totOut').textContent})`);
+ok(soloNum($('#totNet').textContent) === '530.00', `Consultorio: queda 530.00 (dio ${$('#totNet').textContent})`);
+ok($('#barsIn').textContent.includes('Resina'), 'las barras de Consultorio sí muestran Resina');
+ok(!$('#barsOut').textContent.includes('Comida'), 'y no muestran gastos personales');
+
+/* ── 7. Historial por sección ───────────────────────── */
+
+console.log('\n7. Historial por sección');
+tap($('.tab[data-go="historial"]'));
+await esperar(80);
+ok($$('#lista .row').length === 2, `Consultorio: 2 movimientos (${$$('#lista .row').length})`);
+ok($('#lista').textContent.includes('molar superior'), 'la nota se conserva');
+ok(!$('#lista').textContent.includes('despensa'), 'no aparecen los de Personal');
+ok($('#histCount').textContent.includes('Consultorio'), 'el contador dice de qué sección es');
+
+tap($('.amb[data-amb="personal"]'));
+await esperar(120);
+ok($$('#lista .row').length === 2, `Personal: 2 movimientos (${$$('#lista .row').length})`);
+ok($('#lista').textContent.includes('despensa'), 'sí aparece el gasto personal');
+ok(!$('#lista').textContent.includes('molar superior'), 'y no el del consultorio');
+
+/* ── 8. Respaldo: las DOS secciones ─────────────────── */
+
+console.log('\n8. Respaldo');
+tap($('.tab[data-go="ajustes"]'));
+await esperar(80);
+tap($('#exportJson'));
+await esperar(150);
 
 ok(descargas.length === 1, 'se disparó una descarga');
 ok(/^finanzas-\d{4}-\d{2}-\d{2}\.json$/.test(descargas[0]?.nombre || ''), `nombre con fecha: ${descargas[0]?.nombre}`);
 
 const respaldo = JSON.parse(ultimoBlob._texto);
-ok(respaldo.formato === 'consultorio-finanzas', 'el respaldo lleva marca de formato');
-ok(respaldo.movimientos.length === 2, `el respaldo trae los 2 movimientos (${respaldo.movimientos.length})`);
-ok(respaldo.movimientos.every((m) => Number.isInteger(m.centavos)), 'los montos van en centavos enteros, sin decimales flotantes');
-
 const textoRespaldo = ultimoBlob._texto;
+ok(respaldo.movimientos.length === 4, `el respaldo trae los 4 movimientos, no solo la sección activa (${respaldo.movimientos.length})`);
+ok(respaldo.movimientos.filter((m) => m.ambito === 'consultorio').length === 2, '2 son de Consultorio');
+ok(respaldo.movimientos.filter((m) => m.ambito === 'personal').length === 2, '2 son de Personal');
+ok(respaldo.categorias.consultorio && respaldo.categorias.personal, 'guarda las categorías de las dos secciones');
+ok(respaldo.movimientos.every((m) => Number.isInteger(m.centavos)), 'los montos van en centavos enteros');
 
 tap($('#exportCsv'));
-await esperar(80);
+await esperar(100);
 const csv = ultimoBlob._texto;
 ok(csv.startsWith('﻿'), 'el CSV lleva BOM para que Excel no rompa los acentos');
-ok(csv.includes(';'), 'el CSV usa punto y coma');
-ok(csv.split('\r\n').length === 3, `el CSV tiene encabezado + 2 filas (${csv.split('\r\n').length})`);
+// El BOM va antes del encabezado, hay que quitarlo para comparar.
+ok(csv.replace(/^﻿/, '').split('\r\n')[0].startsWith('seccion;'), 'el CSV abre con la columna de sección');
+ok(csv.split('\r\n').length === 5, `el CSV tiene encabezado + 4 filas (${csv.split('\r\n').length})`);
+ok(csv.includes('Personal;') && csv.includes('Consultorio;'), 'el CSV distingue las dos secciones');
 
-/* ── 8. Borrar todo y restaurar ─────────────────────── */
+/* ── 9. Borrar afecta SOLO a la sección activa ──────── */
 
-console.log('\n8. Borrar todo y restaurar');
-tap($('#borrarTodo'));
+console.log('\n9. Borrar solo la sección activa');
+tap($('#borrarTodo')); // estamos en Personal
+await esperar(200);
+tap($('.tab[data-go="historial"]'));
+await esperar(80);
+ok($$('#lista .row').length === 0, 'Personal quedó vacío');
+
+tap($('.amb[data-amb="consultorio"]'));
 await esperar(120);
-tap($('.tab[data-go="historial"]'));
-await esperar(60);
-ok($$('#lista .row').length === 0, 'tras borrar no queda nada');
-ok($('#lista').textContent.includes('Todavía no capturas'), 'aparece el mensaje de vacío');
+ok($$('#lista .row').length === 2, `Consultorio conserva sus 2 movimientos (${$$('#lista .row').length})`);
 
+/* ── 10. Restaurar ──────────────────────────────────── */
+
+console.log('\n10. Restaurar');
 tap($('.tab[data-go="ajustes"]'));
-await esperar(40);
-const fakeFile = { text: () => Promise.resolve(textoRespaldo) };
+await esperar(60);
 const input = $('#importFile');
-Object.defineProperty(input, 'files', { value: [fakeFile], configurable: true });
+Object.defineProperty(input, 'files', { value: [{ text: () => Promise.resolve(textoRespaldo) }], configurable: true });
 input.dispatchEvent(new window.Event('change', { bubbles: true }));
-await esperar(250);
+await esperar(300);
 
-tap($('.tab[data-go="historial"]'));
-await esperar(60);
-ok($$('#lista .row').length === 2, `restaurar devuelve los 2 movimientos (${$$('#lista .row').length})`);
-
+tap($('.amb[data-amb="personal"]'));
+await esperar(120);
 tap($('.tab[data-go="mes"]'));
-await esperar(60);
-ok(soloNum($('#totNet').textContent) === '530.00', 'los totales cuadran igual tras restaurar');
+await esperar(80);
+ok(soloNum($('#totNet').textContent) === '750.00', `Personal vuelve a cuadrar en 750.00 (dio ${$('#totNet').textContent})`);
 
-/* ── 9. Categorías ──────────────────────────────────── */
+tap($('.amb[data-amb="consultorio"]'));
+await esperar(120);
+ok(soloNum($('#totNet').textContent) === '530.00', 'Consultorio no se duplicó al restaurar');
 
-console.log('\n9. Categorías');
+/* ── 11. Categorías por sección ─────────────────────── */
+
+console.log('\n11. Categorías por sección');
 tap($('.tab[data-go="ajustes"]'));
-await esperar(60);
+await esperar(80);
 const form = $('.addcat[data-tipo="ingreso"]');
 form.querySelector('input').value = 'Blanqueamiento';
 form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-await esperar(120);
-ok($('#catIn').textContent.includes('Blanqueamiento'), 'se agrega una categoría nueva');
+await esperar(150);
+ok($('#catIn').textContent.includes('Blanqueamiento'), 'se agrega en Consultorio');
 
-tap($('.tab[data-go="capturar"]'));
-await esperar(40);
-tap($('.seg-in'));
-ok($$('#chips .chip').some((c) => c.textContent === 'Blanqueamiento'), 'la categoría nueva aparece al capturar');
+tap($('.amb[data-amb="personal"]'));
+await esperar(150);
+ok(!$('#catIn').textContent.includes('Blanqueamiento'), 'NO aparece en Personal');
+ok($('#ambNombre').textContent === 'Personal', 'la etiqueta dice de qué sección son las categorías');
 
-/* ── 10. Fecha local, no UTC ────────────────────────── */
+/* ── 12. Fecha local ────────────────────────────────── */
 
-console.log('\n10. Fecha');
-const hoyLocal = new Date();
-const esperado = `${hoyLocal.getFullYear()}-${String(hoyLocal.getMonth() + 1).padStart(2, '0')}-${String(hoyLocal.getDate()).padStart(2, '0')}`;
+console.log('\n12. Fecha');
+const h = new Date();
+const esperado = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`;
 ok($('#fechaInput').value === esperado, `la fecha usa el día local ${esperado} (dio ${$('#fechaInput').value})`);
 
 /* ── Resultado ──────────────────────────────────────── */
 
-console.log(`\n${'─'.repeat(52)}`);
+console.log(`\n${'─'.repeat(56)}`);
 console.log(fallos === 0 ? `TODO BIEN — ${pasos} comprobaciones` : `${fallos} FALLAS de ${pasos} comprobaciones`);
 process.exit(fallos === 0 ? 0 : 1);

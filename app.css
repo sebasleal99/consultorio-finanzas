@@ -24,6 +24,18 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
   --tabh: 4.1rem;
+  --ambh: 3.1rem;
+}
+
+/* El acento cambia con la sección: de un vistazo se sabe si estás anotando
+   algo del consultorio o de tu vida. Es la única defensa contra registrar
+   la despensa como gasto del consultorio. */
+body.a-consultorio { --accent: #0E6E7D; --accent-ink: #FFFFFF; }
+body.a-personal    { --accent: #4B54A6; --accent-ink: #FFFFFF; }
+
+@media (prefers-color-scheme: dark) {
+  body.a-consultorio { --accent: #58C2D0; --accent-ink: #06232A; }
+  body.a-personal    { --accent: #A3ABF2; --accent-ink: #14173A; }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -87,11 +99,48 @@ button { cursor: pointer; }
 
 /* ── Pantallas ─────────────────────────────────────── */
 
+/* ── Barra de sección ──────────────────────────────── */
+
+.ambitobar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  padding: calc(var(--safe-t) + 0.45rem) 0.7rem 0.45rem;
+  background: var(--ground);
+  border-bottom: 1px solid var(--hair);
+}
+
+.amb {
+  padding: 0.48rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--hair);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.amb.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.ambtag {
+  font-weight: 400;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+}
+
 .screen {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  padding: calc(var(--safe-t) + 0.9rem) 1rem calc(var(--tabh) + var(--safe-b) + 1.2rem);
+  padding: calc(var(--safe-t) + var(--ambh) + 0.6rem) 1rem calc(var(--tabh) + var(--safe-b) + 1.2rem);
   min-height: 100dvh;
   max-width: 32rem;
   margin-inline: auto;

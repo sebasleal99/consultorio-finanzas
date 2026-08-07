@@ -1,8 +1,12 @@
-/* Ingresos y Egresos — consultorio
+/* Ingresos y Egresos — consultorio y vida personal
  *
  * Todo vive en IndexedDB, dentro del teléfono. No hay red, no hay servidor,
  * no hay cuenta. La única forma de que un dato salga de aquí es que tú lo
  * exportes a propósito con el botón de respaldo.
+ *
+ * Dos secciones separadas — Consultorio y Personal — que no se mezclan nunca:
+ * cada una tiene sus movimientos, sus categorías y sus totales. El acento de
+ * color cambia con la sección para que no haya duda de dónde estás anotando.
  *
  * Los montos se guardan en CENTAVOS como enteros. Nunca en decimales:
  * 0.1 + 0.2 no da 0.3 en coma flotante, y esto es dinero.
@@ -15,22 +19,32 @@
 const DB_NAME = 'consultorio-finanzas';
 const DB_VER = 1;
 
+const AMBITOS = ['consultorio', 'personal'];
+const NOMBRE_AMBITO = { consultorio: 'Consultorio', personal: 'Personal' };
+const COLOR_AMBITO = { consultorio: '#0E6E7D', personal: '#4B54A6' };
+
 const CATS_DEFAULT = {
-  ingreso: ['Consulta', 'Limpieza', 'Resina', 'Endodoncia', 'Ortodoncia', 'Extracción', 'Prótesis', 'Otro'],
-  egreso: ['Laboratorio', 'Insumos', 'Renta', 'Sueldos', 'Servicios', 'Equipo', 'Publicidad', 'Otro'],
+  consultorio: {
+    ingreso: ['Consulta', 'Limpieza', 'Resina', 'Endodoncia', 'Ortodoncia', 'Extracción', 'Prótesis', 'Otro'],
+    egreso: ['Laboratorio', 'Insumos', 'Renta', 'Sueldos', 'Servicios', 'Equipo', 'Publicidad', 'Otro'],
+  },
+  personal: {
+    ingreso: ['Retiro del consultorio', 'Otro ingreso'],
+    egreso: ['Comida', 'Casa', 'Transporte', 'Salud', 'Familia', 'Entretenimiento', 'Ropa', 'Educación', 'Ahorro', 'Otro'],
+  },
 };
 
 const MXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
 const NUM = new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
+const money = (c) => MXN.format(c / 100);
+const plain = (c) => NUM.format(c / 100);
+
 /** Copia profunda de datos simples. A propósito no usamos structuredClone:
  *  esto solo clona listas de texto y así la app no depende de una API que
  *  puede faltar en un navegador viejo. */
 const clonar = (o) => JSON.parse(JSON.stringify(o));
-
-const money = (c) => MXN.format(c / 100);
-const plain = (c) => NUM.format(c / 100);
 
 /** Fecha local en YYYY-MM-DD. Nunca toISOString(): eso da UTC y en México
  *  adelanta el día por la tarde, guardando el movimiento en la fecha equivocada. */
@@ -93,7 +107,6 @@ function tx(store, modo, fn) {
 const todosMov = () => tx('mov', 'readonly', (s) => s.getAll());
 const guardarMov = (m) => tx('mov', 'readwrite', (s) => s.put(m));
 const borrarMov = (id) => tx('mov', 'readwrite', (s) => s.delete(id));
-const vaciarMov = () => tx('mov', 'readwrite', (s) => s.clear());
 
 async function leerCfg(k, fallback) {
   const r = await tx('cfg', 'readonly', (s) => s.get(k));
@@ -105,6 +118,7 @@ const escribirCfg = (k, v) => tx('cfg', 'readwrite', (s) => s.put({ k, v }));
 /* ── Estado ─────────────────────────────────────────── */
 
 const estado = {
+  ambito: 'consultorio',
   tipo: 'ingreso',
   centavos: 0,
   categoria: null,
@@ -117,6 +131,13 @@ const estado = {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+/** Categorías de la sección y tipo actuales. */
+const catsActuales = () => (estado.cats[estado.ambito] && estado.cats[estado.ambito][estado.tipo]) || [];
+
+/** Movimientos de la sección actual. Todo lo que se muestra pasa por aquí:
+ *  es lo que garantiza que las dos secciones no se mezclen. */
+const movsAmbito = () => estado.movs.filter((m) => m.ambito === estado.ambito);
+
 let toastT = null;
 function toast(msg) {
   const el = $('#toast');
@@ -124,6 +145,76 @@ function toast(msg) {
   el.classList.add('show');
   clearTimeout(toastT);
   toastT = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+/* ── Migración de datos viejos ──────────────────────── */
+
+/** La primera versión no tenía secciones. Lo que ya estaba capturado era del
+ *  consultorio, así que ahí se queda; y las categorías sueltas pasan a ser
+ *  las del consultorio, conservando las que el usuario hubiera agregado. */
+async function migrar(catsGuardadas) {
+  let cats;
+  if (catsGuardadas && (catsGuardadas.consultorio || catsGuardadas.personal)) {
+    cats = catsGuardadas;
+  } else if (catsGuardadas && (catsGuardadas.ingreso || catsGuardadas.egreso)) {
+    cats = {
+      consultorio: {
+        ingreso: catsGuardadas.ingreso || clonar(CATS_DEFAULT.consultorio.ingreso),
+        egreso: catsGuardadas.egreso || clonar(CATS_DEFAULT.consultorio.egreso),
+      },
+      personal: clonar(CATS_DEFAULT.personal),
+    };
+    await escribirCfg('cats', cats);
+  } else {
+    cats = clonar(CATS_DEFAULT);
+  }
+
+  // Rellena huecos por si falta una rama entera.
+  for (const a of AMBITOS) {
+    if (!cats[a]) cats[a] = clonar(CATS_DEFAULT[a]);
+    for (const t of ['ingreso', 'egreso']) {
+      if (!Array.isArray(cats[a][t])) cats[a][t] = clonar(CATS_DEFAULT[a][t]);
+    }
+  }
+  estado.cats = cats;
+
+  const sinAmbito = estado.movs.filter((m) => !m.ambito);
+  for (const m of sinAmbito) {
+    m.ambito = 'consultorio';
+    await guardarMov(m);
+  }
+}
+
+/* ── Sección ────────────────────────────────────────── */
+
+async function setAmbito(a, persistir = true) {
+  estado.ambito = a;
+  document.body.classList.toggle('a-consultorio', a === 'consultorio');
+  document.body.classList.toggle('a-personal', a === 'personal');
+
+  $$('.amb').forEach((b) => {
+    const on = b.dataset.amb === a;
+    b.classList.toggle('is-on', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+
+  // La barra de estado del teléfono se tiñe igual que la sección.
+  const meta = document.querySelector('meta[name="theme-color"]:not([media*="dark"])');
+  if (meta) meta.setAttribute('content', COLOR_AMBITO[a]);
+
+  const nom = NOMBRE_AMBITO[a];
+  ['#ambTag1', '#ambTag2'].forEach((s) => { const el = $(s); if (el) el.textContent = '· ' + nom; });
+  ['#ambNombre', '#ambNombre2'].forEach((s) => { const el = $(s); if (el) el.textContent = nom; });
+
+  estado.categoria = null;
+  estado.centavos = 0;
+  pintarChips();
+  pintarMonto();
+  pintarMes();
+  pintarHistorial();
+  pintarCategorias();
+
+  if (persistir) await escribirCfg('ambito', a);
 }
 
 /* ── Pantalla: capturar ─────────────────────────────── */
@@ -136,7 +227,7 @@ function pintarMonto() {
 function pintarChips() {
   const cont = $('#chips');
   cont.innerHTML = '';
-  const lista = estado.cats[estado.tipo] || [];
+  const lista = catsActuales();
   if (!lista.includes(estado.categoria)) estado.categoria = null;
   for (const c of lista) {
     const b = document.createElement('button');
@@ -165,6 +256,7 @@ function setTipo(t) {
   });
   pintarChips();
   pintarMonto();
+  pintarCategorias();
 }
 
 function tecla(k) {
@@ -191,6 +283,7 @@ async function guardar() {
   if (estado.centavos <= 0 || !estado.categoria) return;
   const m = {
     id: (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()) + Math.random().toString(16).slice(2),
+    ambito: estado.ambito,
     tipo: estado.tipo,
     centavos: estado.centavos,
     categoria: estado.categoria,
@@ -202,7 +295,7 @@ async function guardar() {
   estado.movs.push(m);
 
   const signo = m.tipo === 'ingreso' ? 'Entró' : 'Salió';
-  toast(`${signo} ${money(m.centavos)} · ${m.categoria}`);
+  toast(`${signo} ${money(m.centavos)} · ${m.categoria} · ${NOMBRE_AMBITO[m.ambito]}`);
 
   estado.centavos = 0;
   $('#notaInput').value = '';
@@ -218,7 +311,7 @@ function movsDelMes() {
   const y = estado.mes.y;
   const m = String(estado.mes.m + 1).padStart(2, '0');
   const pre = `${y}-${m}`;
-  return estado.movs.filter((x) => x.fecha.startsWith(pre));
+  return movsAmbito().filter((x) => x.fecha.startsWith(pre));
 }
 
 function pintarBarras(cont, movs, tipo) {
@@ -286,16 +379,17 @@ function moverMes(delta) {
 function pintarHistorial() {
   const cont = $('#lista');
   cont.innerHTML = '';
-  $('#histCount').textContent = estado.movs.length
-    ? `${estado.movs.length} movimiento${estado.movs.length === 1 ? '' : 's'}`
+  const propios = movsAmbito();
+  $('#histCount').textContent = propios.length
+    ? `${propios.length} en ${NOMBRE_AMBITO[estado.ambito]}`
     : '';
 
-  if (estado.movs.length === 0) {
-    cont.innerHTML = '<p class="empty">Todavía no capturas nada.<br>Ve a Capturar y anota el primero.</p>';
+  if (propios.length === 0) {
+    cont.innerHTML = `<p class="empty">Todavía no capturas nada en ${NOMBRE_AMBITO[estado.ambito]}.<br>Ve a Capturar y anota el primero.</p>`;
     return;
   }
 
-  const orden = [...estado.movs].sort((a, b) => (a.fecha === b.fecha ? b.creado - a.creado : b.fecha.localeCompare(a.fecha)));
+  const orden = [...propios].sort((a, b) => (a.fecha === b.fecha ? b.creado - a.creado : b.fecha.localeCompare(a.fecha)));
   let ultimaFecha = null;
 
   for (const m of orden) {
@@ -324,7 +418,7 @@ function pintarHistorial() {
 
     const amt = document.createElement('div');
     amt.className = 'row-amt';
-    amt.textContent = (m.tipo === 'ingreso' ? '+' : '−') + money(m.centavos).replace('$', '$ ');
+    amt.textContent = (m.tipo === 'ingreso' ? '+' : '−') + money(m.centavos).replace('$', '$ ');
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -350,8 +444,10 @@ function pintarHistorial() {
 function pintarCategorias() {
   for (const [tipo, sel] of [['ingreso', '#catIn'], ['egreso', '#catOut']]) {
     const cont = $(sel);
+    if (!cont) continue;
     cont.innerHTML = '';
-    for (const c of estado.cats[tipo]) {
+    const lista = (estado.cats[estado.ambito] && estado.cats[estado.ambito][tipo]) || [];
+    for (const c of lista) {
       const row = document.createElement('div');
       row.className = 'catrow';
       const s = document.createElement('span');
@@ -361,9 +457,9 @@ function pintarCategorias() {
       b.innerHTML = '&times;';
       b.setAttribute('aria-label', `Quitar categoría ${c}`);
       b.addEventListener('click', async () => {
-        const usada = estado.movs.some((m) => m.tipo === tipo && m.categoria === c);
+        const usada = estado.movs.some((m) => m.ambito === estado.ambito && m.tipo === tipo && m.categoria === c);
         if (usada && !confirm(`Ya usaste "${c}" en movimientos guardados. Si la quitas, esos movimientos la conservan pero ya no podrás elegirla. ¿Quitarla?`)) return;
-        estado.cats[tipo] = estado.cats[tipo].filter((x) => x !== c);
+        estado.cats[estado.ambito][tipo] = estado.cats[estado.ambito][tipo].filter((x) => x !== c);
         await escribirCfg('cats', estado.cats);
         pintarCategorias();
         pintarChips();
@@ -389,9 +485,11 @@ function descargar(nombre, contenido, mime) {
 }
 
 async function exportarJson() {
+  // El respaldo lleva SIEMPRE las dos secciones: si solo guardara la actual,
+  // restaurarlo borraría media vida sin avisar.
   const payload = {
     formato: 'consultorio-finanzas',
-    version: 1,
+    version: 2,
     exportado: new Date().toISOString(),
     categorias: estado.cats,
     movimientos: estado.movs,
@@ -399,7 +497,7 @@ async function exportarJson() {
   descargar(`finanzas-${hoyISO()}.json`, JSON.stringify(payload, null, 2), 'application/json');
   await escribirCfg('ultimoRespaldo', Date.now());
   pintarRespaldoNota();
-  toast(`Respaldo de ${estado.movs.length} movimientos`);
+  toast(`Respaldo de ${estado.movs.length} movimientos, las dos secciones`);
 }
 
 function exportarCsv() {
@@ -409,13 +507,13 @@ function exportarCsv() {
     const s = String(v ?? '');
     return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  const filas = [['fecha', 'tipo', 'categoria', 'monto', 'nota'].join(';')];
-  const orden = [...estado.movs].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const filas = [['seccion', 'fecha', 'tipo', 'categoria', 'monto', 'nota'].join(';')];
+  const orden = [...estado.movs].sort((a, b) => (a.ambito === b.ambito ? a.fecha.localeCompare(b.fecha) : a.ambito.localeCompare(b.ambito)));
   for (const m of orden) {
-    filas.push([m.fecha, m.tipo, esc(m.categoria), (m.centavos / 100).toFixed(2), esc(m.nota)].join(';'));
+    filas.push([NOMBRE_AMBITO[m.ambito] || m.ambito, m.fecha, m.tipo, esc(m.categoria), (m.centavos / 100).toFixed(2), esc(m.nota)].join(';'));
   }
   descargar(`finanzas-${hoyISO()}.csv`, '﻿' + filas.join('\r\n'), 'text/csv;charset=utf-8');
-  toast('CSV exportado');
+  toast('CSV exportado, las dos secciones');
 }
 
 async function importar(file) {
@@ -436,6 +534,7 @@ async function importar(file) {
   for (const m of data.movimientos) {
     if (!m || typeof m.centavos !== 'number' || !m.fecha || !m.tipo) continue;
     if (existentes.has(m.id)) continue;
+    if (!m.ambito) m.ambito = 'consultorio'; // respaldo de la versión sin secciones
     await guardarMov(m);
     estado.movs.push(m);
     nuevos++;
@@ -443,9 +542,14 @@ async function importar(file) {
 
   // Las categorías se suman, no se reemplazan: no perdemos las que ya tenías.
   if (data.categorias) {
-    for (const t of ['ingreso', 'egreso']) {
-      for (const c of data.categorias[t] || []) {
-        if (!estado.cats[t].includes(c)) estado.cats[t].push(c);
+    const entra = (data.categorias.consultorio || data.categorias.personal)
+      ? data.categorias
+      : { consultorio: data.categorias, personal: {} };
+    for (const a of AMBITOS) {
+      for (const t of ['ingreso', 'egreso']) {
+        for (const c of (entra[a] && entra[a][t]) || []) {
+          if (!estado.cats[a][t].includes(c)) estado.cats[a][t].push(c);
+        }
       }
     }
     await escribirCfg('cats', estado.cats);
@@ -489,8 +593,8 @@ function ir(nombre) {
 
 async function init() {
   db = await abrirDB();
-  estado.cats = await leerCfg('cats', clonar(CATS_DEFAULT));
   estado.movs = await todosMov();
+  await migrar(await leerCfg('cats', null));
 
   // Pide al navegador que no borre estos datos si le falta espacio.
   if (navigator.storage && navigator.storage.persist) {
@@ -504,10 +608,12 @@ async function init() {
   }
 
   setTipo('ingreso');
+  await setAmbito(await leerCfg('ambito', 'consultorio'), false);
   setFecha(hoyISO());
   pintarMonto();
-  pintarHistorial();
-  pintarMes();
+
+  // Sección
+  $$('.amb').forEach((b) => b.addEventListener('click', () => setAmbito(b.dataset.amb)));
 
   // Teclado
   $('#keypad').addEventListener('click', (e) => {
@@ -548,8 +654,8 @@ async function init() {
       const val = input.value.trim();
       const tipo = form.dataset.tipo;
       if (!val) return;
-      if (estado.cats[tipo].includes(val)) { toast('Esa categoría ya existe'); return; }
-      estado.cats[tipo].push(val);
+      if (estado.cats[estado.ambito][tipo].includes(val)) { toast('Esa categoría ya existe'); return; }
+      estado.cats[estado.ambito][tipo].push(val);
       await escribirCfg('cats', estado.cats);
       input.value = '';
       pintarCategorias();
@@ -557,14 +663,18 @@ async function init() {
     });
   });
 
+  // Borra SOLO la sección en la que estás: nunca las dos de un golpe.
   $('#borrarTodo').addEventListener('click', async () => {
-    if (!confirm('Esto borra TODOS los movimientos de este teléfono. No se puede deshacer.\n\n¿Ya respaldaste?')) return;
-    if (!confirm('Última confirmación: ¿borrar todo?')) return;
-    await vaciarMov();
-    estado.movs = [];
+    const nom = NOMBRE_AMBITO[estado.ambito];
+    const cuantos = movsAmbito().length;
+    if (cuantos === 0) { toast(`No hay nada en ${nom}`); return; }
+    if (!confirm(`Esto borra los ${cuantos} movimientos de ${nom}. La otra sección no se toca.\nNo se puede deshacer.\n\n¿Ya respaldaste?`)) return;
+    if (!confirm(`Última confirmación: ¿borrar ${nom}?`)) return;
+    for (const m of movsAmbito()) await borrarMov(m.id);
+    estado.movs = estado.movs.filter((m) => m.ambito !== estado.ambito);
     pintarHistorial();
     pintarMes();
-    toast('Todo borrado');
+    toast(`${nom} borrado`);
   });
 
   // Teclado físico, por si la abres en la computadora
