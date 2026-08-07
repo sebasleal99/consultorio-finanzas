@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Ingresos y Egresos</title>
+<meta name="description" content="Control de ingresos y egresos del consultorio. Los datos se guardan solo en este teléfono.">
+<meta name="theme-color" content="#0E6E7D" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0C1418" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Finanzas">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ══ CAPTURAR ══════════════════════════════════════ -->
+<section class="screen" id="screen-capturar" data-screen="capturar">
+  <header class="topbar">
+    <h1>Capturar</h1>
+    <button type="button" class="datebtn" id="fechaBtn" aria-label="Cambiar fecha del movimiento">
+      <span id="fechaLabel">Hoy</span>
+      <input type="date" id="fechaInput" aria-label="Fecha">
+    </button>
+  </header>
+
+  <div class="amount" role="group" aria-label="Monto">
+    <span class="cur">$</span>
+    <output class="amt" id="montoOut" aria-live="polite">0.00</output>
+  </div>
+
+  <div class="segmented" role="radiogroup" aria-label="Tipo de movimiento">
+    <button type="button" class="seg seg-in is-on" data-tipo="ingreso" role="radio" aria-checked="true">Entró</button>
+    <button type="button" class="seg seg-out" data-tipo="egreso" role="radio" aria-checked="false">Salió</button>
+  </div>
+
+  <div class="chips" id="chips" role="radiogroup" aria-label="Categoría"></div>
+
+  <label class="notafield">
+    <span class="sr">Nota opcional</span>
+    <input type="text" id="notaInput" placeholder="Nota (opcional)" maxlength="80" autocomplete="off">
+  </label>
+
+  <div class="keypad" id="keypad" role="group" aria-label="Teclado numérico">
+    <button type="button" data-k="1">1</button>
+    <button type="button" data-k="2">2</button>
+    <button type="button" data-k="3">3</button>
+    <button type="button" data-k="4">4</button>
+    <button type="button" data-k="5">5</button>
+    <button type="button" data-k="6">6</button>
+    <button type="button" data-k="7">7</button>
+    <button type="button" data-k="8">8</button>
+    <button type="button" data-k="9">9</button>
+    <button type="button" data-k="00">00</button>
+    <button type="button" data-k="0">0</button>
+    <button type="button" data-k="del" aria-label="Borrar último dígito">&#9003;</button>
+  </div>
+
+  <button type="button" class="save" id="guardarBtn" disabled>Guardar</button>
+</section>
+
+<!-- ══ MES ═══════════════════════════════════════════ -->
+<section class="screen" id="screen-mes" data-screen="mes" hidden>
+  <header class="topbar">
+    <h1>Mes</h1>
+    <div class="monthnav">
+      <button type="button" id="mesPrev" aria-label="Mes anterior">&#8249;</button>
+      <span id="mesLabel">—</span>
+      <button type="button" id="mesNext" aria-label="Mes siguiente">&#8250;</button>
+    </div>
+  </header>
+
+  <div class="totals">
+    <div class="tot tot-in">
+      <span class="tot-k">Entró</span>
+      <span class="tot-v" id="totIn">$0.00</span>
+    </div>
+    <div class="tot tot-out">
+      <span class="tot-k">Salió</span>
+      <span class="tot-v" id="totOut">$0.00</span>
+    </div>
+    <div class="tot tot-net">
+      <span class="tot-k">Queda</span>
+      <span class="tot-v" id="totNet">$0.00</span>
+    </div>
+  </div>
+
+  <h2 class="subhead">Entró, por categoría</h2>
+  <div class="bars" id="barsIn"></div>
+
+  <h2 class="subhead">Salió, por categoría</h2>
+  <div class="bars" id="barsOut"></div>
+</section>
+
+<!-- ══ HISTORIAL ═════════════════════════════════════ -->
+<section class="screen" id="screen-historial" data-screen="historial" hidden>
+  <header class="topbar">
+    <h1>Historial</h1>
+    <span class="count" id="histCount"></span>
+  </header>
+  <div class="list" id="lista"></div>
+</section>
+
+<!-- ══ AJUSTES ═══════════════════════════════════════ -->
+<section class="screen" id="screen-ajustes" data-screen="ajustes" hidden>
+  <header class="topbar"><h1>Ajustes</h1></header>
+
+  <h2 class="subhead">Respaldo</h2>
+  <p class="note">Tus movimientos viven <strong>solo en este teléfono</strong>. Si lo pierdes o borras la app, se van con él. Respalda seguido — cada domingo es buena costumbre.</p>
+  <div class="btnrow">
+    <button type="button" class="btn btn-primary" id="exportJson">Respaldar</button>
+    <button type="button" class="btn" id="exportCsv">Exportar CSV</button>
+  </div>
+  <label class="btn btn-file">
+    Restaurar respaldo
+    <input type="file" id="importFile" accept="application/json,.json">
+  </label>
+  <p class="note" id="respaldoNota"></p>
+
+  <h2 class="subhead">Categorías de ingreso</h2>
+  <div class="catedit" id="catIn"></div>
+  <form class="addcat" data-tipo="ingreso">
+    <input type="text" placeholder="Agregar categoría" maxlength="24" required>
+    <button type="submit" class="btn btn-sm">Agregar</button>
+  </form>
+
+  <h2 class="subhead">Categorías de egreso</h2>
+  <div class="catedit" id="catOut"></div>
+  <form class="addcat" data-tipo="egreso">
+    <input type="text" placeholder="Agregar categoría" maxlength="24" required>
+    <button type="submit" class="btn btn-sm">Agregar</button>
+  </form>
+
+  <h2 class="subhead">Zona de riesgo</h2>
+  <button type="button" class="btn btn-danger" id="borrarTodo">Borrar todos los movimientos</button>
+
+  <p class="note colophon">
+    Consultorio · Ingresos y Egresos<br>
+    Nada de lo que capturas sale de este teléfono. No hay servidor, no hay cuenta, no hay quien lo vea.<br>
+    <span id="almacenNota"></span>
+  </p>
+</section>
+
+<!-- ══ NAVEGACIÓN ════════════════════════════════════ -->
+<nav class="tabs" role="tablist" aria-label="Secciones">
+  <button type="button" class="tab is-on" data-go="capturar" role="tab" aria-selected="true">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    <span>Capturar</span>
+  </button>
+  <button type="button" class="tab" data-go="mes" role="tab" aria-selected="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V10M12 19V5M19 19v-6"/></svg>
+    <span>Mes</span>
+  </button>
+  <button type="button" class="tab" data-go="historial" role="tab" aria-selected="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+    <span>Historial</span>
+  </button>
+  <button type="button" class="tab" data-go="ajustes" role="tab" aria-selected="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/></svg>
+    <span>Ajustes</span>
+  </button>
+</nav>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

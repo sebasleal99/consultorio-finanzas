@@ -1,0 +1,15 @@
+{
+  "name": "consultorio-finanzas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PWA de ingresos y egresos del consultorio. La app no tiene dependencias; estas son solo para probarla.",
+  "scripts": {
+    "icons": "node tools/gen-icons.mjs",
+    "test": "node tools/smoke-test.mjs",
+    "serve": "npx serve -l 4173 ."
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.0.0",
+    "jsdom": "^25.0.0"
+  }
+}
