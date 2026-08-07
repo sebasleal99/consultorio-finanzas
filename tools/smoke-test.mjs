@@ -6,7 +6,7 @@
  * Uso:  npm test
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
@@ -274,6 +274,38 @@ console.log('\n12. Fecha');
 await irA('capturar');
 const esperado = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(diaHoy).padStart(2, '0')}`;
 ok($('#fechaInput').value === esperado, `la fecha usa el día local ${esperado} (dio ${$('#fechaInput').value})`);
+
+/* ── 13. Captura rápida: atajos del icono ───────────── */
+
+console.log('\n13. Captura rápida');
+const man = JSON.parse(readFileSync(join(ROOT, 'manifest.webmanifest'), 'utf8'));
+ok(Array.isArray(man.shortcuts) && man.shortcuts.length === 2, `el manifiesto declara 2 atajos (${man.shortcuts?.length})`);
+ok(man.shortcuts?.[0].url === './?t=ingreso', 'el primero abre en modo ingreso');
+ok(man.shortcuts?.[1].url === './?t=egreso', 'el segundo en modo egreso');
+ok(man.shortcuts?.every((s) => s.description), 'los dos llevan descripción');
+ok(man.shortcuts?.every((s) => s.icons?.[0]?.src), 'y su propio icono');
+for (const ic of ['icons/atajo-mas.png', 'icons/atajo-menos.png']) {
+  ok(existsSync(join(ROOT, ic)), `existe ${ic}`);
+}
+const swTxt = readFileSync(join(ROOT, 'sw.js'), 'utf8');
+ok(swTxt.includes("e.action === 'ingreso'"), 'el service worker atiende el botón +');
+ok(swTxt.includes("e.action === 'egreso'"), 'y el botón −');
+
+// La app abierta desde un atajo debe caer en el tipo correcto.
+const dom2 = new JSDOM(readFileSync(join(ROOT, 'index.html'), 'utf8'), {
+  url: 'http://localhost/?t=egreso', pretendToBeVisual: true, runScripts: 'outside-only',
+});
+const w2 = dom2.window;
+w2.indexedDB = new FDBFactory();
+w2.IDBKeyRange = FDBKeyRange;
+w2.crypto = { randomUUID: () => 'x-' + (++n) };
+w2.scrollTo = () => {};
+w2.confirm = () => true;
+w2.eval(readFileSync(join(ROOT, 'app.js'), 'utf8'));
+await esperar(300);
+ok(w2.document.querySelector('.seg-out').classList.contains('is-on'), 'abrir con ?t=egreso arranca en "Salió"');
+ok(w2.document.querySelector('#screen-capturar').hidden === false, 'y aterriza en la pantalla de capturar');
+ok(!w2.location.search.includes('t='), 'el parámetro se limpia de la barra de direcciones');
 
 /* ── Resultado ──────────────────────────────────────── */
 

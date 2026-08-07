@@ -1010,6 +1010,98 @@ async function revisarYNotificar() {
   } catch { /* sin service worker: solo el aviso en pantalla */ }
 }
 
+/* ── Captura rápida: atajos y barra fija ────────────── */
+
+/** Los atajos del icono abren ./?t=ingreso o ./?t=egreso. Un widget de
+ *  pantalla de inicio no existe para una PWA; esto es lo más cerca. */
+function aplicarAtajoURL() {
+  let t = null;
+  try { t = new URL(location.href).searchParams.get('t'); } catch { return; }
+  if (t !== 'ingreso' && t !== 'egreso') return;
+  setTipo(t);
+  ir('capturar');
+  toast(t === 'ingreso' ? 'Anota lo que entró' : 'Anota lo que salió');
+  // Limpia el parámetro para que recargar no vuelva a forzar el tipo.
+  try { history.replaceState(null, '', location.pathname); } catch { /* da igual */ }
+}
+
+const BARRA_TAG = 'barra-rapida';
+
+async function mostrarBarraRapida() {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('Ingresos y Egresos', {
+      body: 'Toca + o − para anotar sin abrir la app.',
+      tag: BARRA_TAG,
+      renotify: false,
+      silent: true,
+      requireInteraction: true,   // que se quede fija en la persiana
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      actions: [
+        { action: 'ingreso', title: '+ Entró', icon: 'icons/atajo-mas.png' },
+        { action: 'egreso', title: '− Salió', icon: 'icons/atajo-menos.png' },
+      ],
+    });
+    return true;
+  } catch { return false; }
+}
+
+async function quitarBarraRapida() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    for (const n of await reg.getNotifications({ tag: BARRA_TAG })) n.close();
+  } catch { /* nada que cerrar */ }
+}
+
+function pintarBarraBox() {
+  const box = $('#barraBox');
+  if (!box) return;
+  box.innerHTML = '';
+
+  if (!('Notification' in window)) {
+    const p = document.createElement('p');
+    p.textContent = 'Este navegador no puede fijar la barra rápida. Los atajos del icono sí funcionan.';
+    box.appendChild(p);
+    return;
+  }
+
+  const activa = !!estado.barraRapida;
+  const e = document.createElement('p');
+  e.className = 'estado';
+  e.textContent = activa ? 'Barra rápida encendida' : 'Barra rápida apagada';
+  const p = document.createElement('p');
+  p.textContent = activa
+    ? 'Vive en tu centro de notificaciones con los botones + y −. Android puede quitarla al reiniciar el teléfono; se vuelve a poner sola al abrir la app.'
+    : 'Deja una barra fija en tu centro de notificaciones con dos botones, + y −, para anotar sin abrir la app.';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn' + (activa ? '' : ' btn-primary');
+  b.textContent = activa ? 'Apagar barra rápida' : 'Encender barra rápida';
+  b.addEventListener('click', async () => {
+    if (activa) {
+      estado.barraRapida = false;
+      await escribirCfg('barraRapida', false);
+      await quitarBarraRapida();
+      toast('Barra rápida apagada');
+    } else {
+      if (Notification.permission !== 'granted') {
+        const r = await Notification.requestPermission();
+        if (r !== 'granted') { toast('Hacen falta los permisos de notificación'); pintarBarraBox(); return; }
+      }
+      const ok = await mostrarBarraRapida();
+      estado.barraRapida = ok;
+      await escribirCfg('barraRapida', ok);
+      toast(ok ? 'Barra rápida encendida' : 'No se pudo encender');
+    }
+    pintarBarraBox();
+    pintarNotifBox();
+  });
+
+  box.append(e, p, b);
+}
+
 /* ── Historial ──────────────────────────────────────── */
 
 function pintarHistorial() {
@@ -1257,7 +1349,7 @@ function ir(nombre) {
   if (nombre === 'salud') pintarSalud();
   if (nombre === 'historial') pintarHistorial();
   if (nombre === 'compromisos') pintarCompromisos();
-  if (nombre === 'ajustes') { pintarCategorias(); pintarRespaldoNota(); }
+  if (nombre === 'ajustes') { pintarCategorias(); pintarRespaldoNota(); pintarBarraBox(); }
 }
 
 /* ── Arranque ───────────────────────────────────────── */
@@ -1290,11 +1382,14 @@ async function init() {
     } catch { /* no es crítico */ }
   }
 
+  estado.barraRapida = await leerCfg('barraRapida', false);
+
   setTipo('ingreso');
   await setAmbito(await leerCfg('ambito', 'consultorio'), false);
   setFecha(hoyISO());
   pintarMonto();
   pintarAvisos();
+  aplicarAtajoURL();
 
   const hoyMes = periodoHoy();
   $('#msiInicio').value = hoyMes;
@@ -1438,7 +1533,12 @@ async function init() {
   try {
     if (navigator.serviceWorker && typeof navigator.serviceWorker.register === 'function') {
       navigator.serviceWorker.register('sw.js')
-        .then(() => { registrarRevisionPeriodica(); revisarYNotificar(); })
+        .then(() => {
+          registrarRevisionPeriodica();
+          revisarYNotificar();
+          // Android puede tirar la barra al reiniciar; la reponemos al abrir.
+          if (estado.barraRapida) mostrarBarraRapida();
+        })
         .catch(() => {});
     }
   } catch { /* sin modo sin conexión, pero la app abre */ }

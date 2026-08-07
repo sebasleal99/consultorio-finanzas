@@ -16,5 +16,21 @@
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Registrar un ingreso",
+      "short_name": "Ingreso",
+      "description": "Anota algo que entró, sin navegar",
+      "url": "./?t=ingreso",
+      "icons": [{ "src": "icons/atajo-mas.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "Registrar un egreso",
+      "short_name": "Egreso",
+      "description": "Anota algo que salió, sin navegar",
+      "url": "./?t=egreso",
+      "icons": [{ "src": "icons/atajo-menos.png", "sizes": "96x96", "type": "image/png" }]
+    }
   ]
 }

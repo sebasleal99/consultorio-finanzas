@@ -4,7 +4,7 @@
  * tarjeta toca y muestra una notificación local. No hay red de por medio.
  */
 
-const CACHE = 'finanzas-v2';
+const CACHE = 'finanzas-v3';
 
 const SHELL = [
   './',
@@ -15,6 +15,8 @@ const SHELL = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './icons/atajo-mas.png',
+  './icons/atajo-menos.png',
 ];
 
 self.addEventListener('install', (e) => {
@@ -163,11 +165,24 @@ self.addEventListener('sync', (e) => {
 });
 
 self.addEventListener('notificationclick', (e) => {
-  e.notification.close();
+  // La barra rápida no se cierra al tocar sus botones: sigue ahí para la próxima.
+  const esBarra = e.notification.tag === 'barra-rapida';
+  if (!esBarra) e.notification.close();
+
+  // Los botones + y − abren la app con el tipo ya elegido.
+  const destino = e.action === 'ingreso' ? './?t=ingreso'
+    : e.action === 'egreso' ? './?t=egreso'
+      : './';
+
   e.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((lista) => {
-      for (const c of lista) if ('focus' in c) return c.focus();
-      if (self.clients.openWindow) return self.clients.openWindow('./');
+      for (const c of lista) {
+        if ('focus' in c) {
+          if (e.action && 'navigate' in c) return c.navigate(destino).then((cl) => cl && cl.focus());
+          return c.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(destino);
     }),
   );
 });

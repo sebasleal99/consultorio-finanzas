@@ -164,6 +164,54 @@ function render(size, maskable) {
   return encodePng(size, size, px);
 }
 
+/* ── Iconos de los atajos (mantener presionado el icono) ─────────────── */
+
+// Verde y barro son los mismos del par divergente validado de la app.
+const VERDE = hex('#0A8259');
+const BARRO = hex('#BE4425');
+
+/** Círculo de color con un signo blanco: + para ingreso, − para egreso. */
+function renderSigno(size, mas) {
+  const px = Buffer.alloc(size * size * 4);
+  const S = 3;
+  const col = mas ? VERDE : BARRO;
+
+  const cx = size / 2, cy = size / 2;
+  const rad = size * 0.46;
+  const brazo = size * 0.26;   // media longitud del trazo
+  const grosor = size * 0.085; // medio grosor
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let r = 0, g = 0, b = 0, a = 0;
+      for (let sy = 0; sy < S; sy++) {
+        for (let sx = 0; sx < S; sx++) {
+          const px_ = x + (sx + 0.5) / S;
+          const py_ = y + (sy + 0.5) / S;
+          const dx = px_ - cx, dy = py_ - cy;
+          if (dx * dx + dy * dy > rad * rad) continue;
+
+          const enHorizontal = Math.abs(dx) <= brazo && Math.abs(dy) <= grosor;
+          const enVertical = mas && Math.abs(dy) <= brazo && Math.abs(dx) <= grosor;
+          const c = (enHorizontal || enVertical) ? [255, 255, 255] : col;
+          r += c[0]; g += c[1]; b += c[2]; a += 255;
+        }
+      }
+      const n = S * S;
+      const i = (y * size + x) * 4;
+      if (a === 0) {
+        px[i] = px[i + 1] = px[i + 2] = px[i + 3] = 0;
+      } else {
+        px[i] = Math.round(r / (a / 255));
+        px[i + 1] = Math.round(g / (a / 255));
+        px[i + 2] = Math.round(b / (a / 255));
+        px[i + 3] = Math.round(a / n);
+      }
+    }
+  }
+  return encodePng(size, size, px);
+}
+
 /* ── Salida ─────────────────────────────────────────── */
 
 mkdirSync(join(ROOT, 'icons'), { recursive: true });
@@ -178,4 +226,10 @@ for (const [rel, size, maskable] of salidas) {
   const buf = render(size, maskable);
   writeFileSync(join(ROOT, rel), buf);
   console.log(`${rel}  ${size}x${size}  ${(buf.length / 1024).toFixed(1)} KB`);
+}
+
+for (const [rel, mas] of [['icons/atajo-mas.png', true], ['icons/atajo-menos.png', false]]) {
+  const buf = renderSigno(96, mas);
+  writeFileSync(join(ROOT, rel), buf);
+  console.log(`${rel}  96x96  ${(buf.length / 1024).toFixed(1)} KB`);
 }
