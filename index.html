@@ -18,7 +18,7 @@
 </head>
 <body>
 
-<!-- ══ ÁMBITO — consultorio vs. personal ═════════════ -->
+<!-- ══ SECCIÓN — consultorio vs. personal ════════════ -->
 <header class="ambitobar" role="radiogroup" aria-label="Sección">
   <button type="button" class="amb is-on" data-amb="consultorio" role="radio" aria-checked="true">Consultorio</button>
   <button type="button" class="amb" data-amb="personal" role="radio" aria-checked="false">Personal</button>
@@ -33,6 +33,8 @@
       <input type="date" id="fechaInput" aria-label="Fecha">
     </button>
   </header>
+
+  <div class="avisos" id="avisos"></div>
 
   <div class="amount" role="group" aria-label="Monto">
     <span class="cur">$</span>
@@ -69,10 +71,10 @@
   <button type="button" class="save" id="guardarBtn" disabled>Guardar</button>
 </section>
 
-<!-- ══ MES ═══════════════════════════════════════════ -->
-<section class="screen" id="screen-mes" data-screen="mes" hidden>
+<!-- ══ SALUD ═════════════════════════════════════════ -->
+<section class="screen" id="screen-salud" data-screen="salud" hidden>
   <header class="topbar">
-    <h1>Mes</h1>
+    <h1>Salud</h1>
     <div class="monthnav">
       <button type="button" id="mesPrev" aria-label="Mes anterior">&#8249;</button>
       <span id="mesLabel">—</span>
@@ -80,26 +82,111 @@
     </div>
   </header>
 
-  <div class="totals">
-    <div class="tot tot-in">
-      <span class="tot-k">Entró</span>
-      <span class="tot-v" id="totIn">$0.00</span>
-    </div>
-    <div class="tot tot-out">
-      <span class="tot-k">Salió</span>
-      <span class="tot-v" id="totOut">$0.00</span>
-    </div>
-    <div class="tot tot-net">
-      <span class="tot-k">Queda</span>
-      <span class="tot-v" id="totNet">$0.00</span>
-    </div>
+  <!-- Número principal: el margen -->
+  <div class="hero" id="hero">
+    <p class="hero-k">Margen del mes</p>
+    <p class="hero-v" id="heroV">—</p>
+    <p class="hero-lect" id="heroLect">Sin datos todavía</p>
+    <div class="hero-escala" id="heroEscala" aria-hidden="true"></div>
+    <p class="hero-sub" id="heroSub"></p>
   </div>
+
+  <div class="totals">
+    <div class="tot tot-in"><span class="tot-k">Entró</span><span class="tot-v" id="totIn">$0.00</span></div>
+    <div class="tot tot-out"><span class="tot-k">Salió</span><span class="tot-v" id="totOut">$0.00</span></div>
+    <div class="tot tot-net"><span class="tot-k">Queda</span><span class="tot-v" id="totNet">$0.00</span></div>
+  </div>
+
+  <h2 class="subhead">Indicadores</h2>
+  <div class="kpis" id="kpis"></div>
+
+  <h2 class="subhead">Margen, últimos 6 meses</h2>
+  <figure class="figura">
+    <div class="figframe" id="tendencia"></div>
+    <figcaption id="tendenciaPie">El margen es lo que queda de cada peso que entra, después de todo lo que sale.</figcaption>
+  </figure>
 
   <h2 class="subhead">Entró, por categoría</h2>
   <div class="bars" id="barsIn"></div>
 
   <h2 class="subhead">Salió, por categoría</h2>
   <div class="bars" id="barsOut"></div>
+
+  <p class="note aviso-honesto">Estos números solo son tan buenos como lo que capturas. Si no anotas algo, no existe para la app.</p>
+</section>
+
+<!-- ══ COMPROMISOS ═══════════════════════════════════ -->
+<section class="screen" id="screen-compromisos" data-screen="compromisos" hidden>
+  <header class="topbar">
+    <h1>Compromisos</h1>
+    <span class="count" id="compMes"></span>
+  </header>
+
+  <div class="resumen-comp" id="resumenComp"></div>
+
+  <!-- Gastos fijos -->
+  <h2 class="subhead">Gastos fijos del mes</h2>
+  <div class="catedit" id="listaFijos"></div>
+  <details class="agregar">
+    <summary class="btn btn-ghost">+ Agregar gasto fijo</summary>
+    <form class="formgrid" id="formFijo">
+      <input type="text" id="fijoNombre" placeholder="Nombre (Renta, Internet…)" maxlength="28" required>
+      <input type="text" id="fijoMonto" inputmode="decimal" placeholder="Monto mensual" required>
+      <label class="campo">
+        <span>Día de pago</span>
+        <input type="number" id="fijoDia" min="1" max="31" value="1" required>
+      </label>
+      <button type="submit" class="btn btn-primary">Guardar gasto fijo</button>
+    </form>
+  </details>
+
+  <!-- Meses sin intereses -->
+  <h2 class="subhead">Compras a meses sin intereses</h2>
+  <div class="catedit" id="listaMsi"></div>
+  <details class="agregar">
+    <summary class="btn btn-ghost">+ Agregar compra a meses</summary>
+    <form class="formgrid" id="formMsi">
+      <input type="text" id="msiNombre" placeholder="Qué compraste" maxlength="28" required>
+      <input type="text" id="msiTotal" inputmode="decimal" placeholder="Monto total de la compra" required>
+      <label class="campo">
+        <span>¿A cuántos meses?</span>
+        <input type="number" id="msiMeses" min="2" max="60" value="12" required>
+      </label>
+      <label class="campo">
+        <span>Primer mes de pago</span>
+        <input type="month" id="msiInicio" required>
+      </label>
+      <p class="note" id="msiPreview"></p>
+      <button type="submit" class="btn btn-primary">Guardar compra a meses</button>
+    </form>
+  </details>
+
+  <!-- Tarjetas -->
+  <h2 class="subhead">Tarjetas de crédito</h2>
+  <div class="catedit" id="listaTarjetas"></div>
+  <details class="agregar">
+    <summary class="btn btn-ghost">+ Agregar tarjeta</summary>
+    <form class="formgrid" id="formTarjeta">
+      <input type="text" id="tarNombre" placeholder="Nombre del banco o tarjeta" maxlength="28" required>
+      <label class="campo">
+        <span>Día límite de pago</span>
+        <input type="number" id="tarDiaPago" min="1" max="31" value="15" required>
+      </label>
+      <label class="campo">
+        <span>Avisarme con</span>
+        <select id="tarAviso">
+          <option value="0">El mismo día</option>
+          <option value="1">1 día antes</option>
+          <option value="3" selected>3 días antes</option>
+          <option value="5">5 días antes</option>
+        </select>
+      </label>
+      <p class="note">Nunca guardes aquí números de tarjeta ni claves. Solo el nombre y el día.</p>
+      <button type="submit" class="btn btn-primary">Guardar tarjeta</button>
+    </form>
+  </details>
+
+  <div class="notifbox" id="notifBox"></div>
 </section>
 
 <!-- ══ HISTORIAL ═════════════════════════════════════ -->
@@ -117,7 +204,7 @@
 
   <h2 class="subhead">Respaldo</h2>
   <p class="note">Tus movimientos viven <strong>solo en este teléfono</strong>. Si lo pierdes o borras la app, se van con él. Respalda seguido — cada domingo es buena costumbre.</p>
-  <p class="note">El respaldo incluye <strong>las dos secciones</strong>, Consultorio y Personal, en un solo archivo.</p>
+  <p class="note">El respaldo incluye <strong>las dos secciones</strong> y todos tus compromisos, en un solo archivo.</p>
   <div class="btnrow">
     <button type="button" class="btn btn-primary" id="exportJson">Respaldar</button>
     <button type="button" class="btn" id="exportCsv">Exportar CSV</button>
@@ -159,9 +246,13 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
     <span>Capturar</span>
   </button>
-  <button type="button" class="tab" data-go="mes" role="tab" aria-selected="false">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V10M12 19V5M19 19v-6"/></svg>
-    <span>Mes</span>
+  <button type="button" class="tab" data-go="salud" role="tab" aria-selected="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 13h4l2.5-6 3 12 2.5-6h5"/></svg>
+    <span>Salud</span>
+  </button>
+  <button type="button" class="tab" data-go="compromisos" role="tab" aria-selected="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.2"/><path d="M3 10h18"/></svg>
+    <span>Compromisos</span>
   </button>
   <button type="button" class="tab" data-go="historial" role="tab" aria-selected="false">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>

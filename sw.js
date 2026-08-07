@@ -1,14 +1,10 @@
-/* Service worker — hace que la app abra sin internet.
+/* Service worker — modo sin conexión y recordatorios de pago.
  *
- * Estrategia: cache-first para el armazón de la app (siempre son los mismos
- * cuatro archivos), y red-primero solo para el HTML, para que una versión
- * nueva se note al siguiente arranque.
- *
- * Aquí NUNCA pasan datos del usuario: los movimientos viven en IndexedDB,
- * que el service worker ni toca.
+ * Aquí NUNCA salen datos del teléfono: lee IndexedDB solo para saber qué
+ * tarjeta toca y muestra una notificación local. No hay red de por medio.
  */
 
-const CACHE = 'finanzas-v1';
+const CACHE = 'finanzas-v2';
 
 const SHELL = [
   './',
@@ -41,12 +37,9 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
-
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // El HTML se pide primero a la red para detectar versiones nuevas;
-  // si no hay señal, sale del cache.
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req)
@@ -70,6 +63,111 @@ self.addEventListener('fetch', (e) => {
         }
         return r;
       });
+    }),
+  );
+});
+
+/* ── Recordatorios de tarjetas ──────────────────────── */
+
+const DB_NAME = 'consultorio-finanzas';
+
+function abrirDB() {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open(DB_NAME);
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+
+function leerCfg(db, k) {
+  return new Promise((resolve) => {
+    try {
+      const req = db.transaction('cfg', 'readonly').objectStore('cfg').get(k);
+      req.onsuccess = () => resolve(req.result ? req.result.v : undefined);
+      req.onerror = () => resolve(undefined);
+    } catch { resolve(undefined); }
+  });
+}
+
+function escribirCfg(db, k, v) {
+  return new Promise((resolve) => {
+    try {
+      const t = db.transaction('cfg', 'readwrite');
+      t.objectStore('cfg').put({ k, v });
+      t.oncomplete = () => resolve();
+      t.onerror = () => resolve();
+    } catch { resolve(); }
+  });
+}
+
+function hoyISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Mismos cálculos que la app: días hasta el próximo día `dia` del mes. */
+function diasParaDia(dia) {
+  const hoy = new Date();
+  const diaHoy = hoy.getDate();
+  const ultimoDeEste = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
+  const objetivoEste = Math.min(dia, ultimoDeEste);
+  if (diaHoy <= objetivoEste) return objetivoEste - diaHoy;
+  const ultimoDelQue = new Date(hoy.getFullYear(), hoy.getMonth() + 2, 0).getDate();
+  const objetivoSig = Math.min(dia, ultimoDelQue);
+  const fSig = new Date(hoy.getFullYear(), hoy.getMonth() + 1, objetivoSig);
+  return Math.round((fSig - new Date(hoy.getFullYear(), hoy.getMonth(), diaHoy)) / 86400000);
+}
+
+async function revisarPagos() {
+  let db;
+  try { db = await abrirDB(); } catch { return; }
+
+  const comp = await leerCfg(db, 'compromisos');
+  if (!comp) return;
+
+  const ya = (await leerCfg(db, 'notificado')) || {};
+  const hoy = hoyISO();
+  let cambio = false;
+
+  for (const ambito of Object.keys(comp)) {
+    for (const t of (comp[ambito] && comp[ambito].tarjetas) || []) {
+      const d = diasParaDia(t.diaPago);
+      if (d > (t.aviso == null ? 3 : t.aviso)) continue;
+      if (ya[t.id] === hoy) continue;
+      await self.registration.showNotification(
+        d === 0 ? `Hoy se paga ${t.nombre}` : `${t.nombre}: faltan ${d} días`,
+        {
+          body: d === 0 ? `Día límite de pago: ${t.diaPago}.` : `Día límite: ${t.diaPago} de cada mes.`,
+          tag: 'tarjeta-' + t.id,
+          icon: './icons/icon-192.png',
+          badge: './icons/icon-192.png',
+          data: { url: './' },
+        },
+      );
+      ya[t.id] = hoy;
+      cambio = true;
+    }
+  }
+
+  if (cambio) await escribirCfg(db, 'notificado', ya);
+}
+
+// Chrome despierta esto cuando él decide, no cuando nosotros queremos.
+// Por eso la app también revisa al abrirse: entre las dos, no se escapa.
+self.addEventListener('periodicsync', (e) => {
+  if (e.tag === 'revisar-pagos') e.waitUntil(revisarPagos());
+});
+
+self.addEventListener('sync', (e) => {
+  if (e.tag === 'revisar-pagos') e.waitUntil(revisarPagos());
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((lista) => {
+      for (const c of lista) if ('focus' in c) return c.focus();
+      if (self.clients.openWindow) return self.clients.openWindow('./');
     }),
   );
 });

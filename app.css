@@ -12,11 +12,15 @@
   --hair: #D6DEDE;
   --accent: #0E6E7D;
   --accent-ink: #FFFFFF;
-  --in: #0C7357;
+  /* Par divergente entró/salió. Validado con el script de paleta:
+     banda de luminosidad, piso de croma, separación en daltonismo
+     (deutan ΔE 8.2) y contraste contra la superficie, todo en verde.
+     El verde anterior (#0C7357) reprobaba el piso de croma: leía gris. */
+  --in: #0A8259;
   --in-bg: #E1F1EB;
-  --out: #A8452C;
+  --out: #BE4425;
   --out-bg: #F8E9E4;
-  --danger: #A8452C;
+  --danger: #BE4425;
 
   --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Roboto", sans-serif;
   --mono: "Cascadia Mono", "Roboto Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
@@ -49,11 +53,13 @@ body.a-personal    { --accent: #4B54A6; --accent-ink: #FFFFFF; }
     --hair: #27393F;
     --accent: #58C2D0;
     --accent-ink: #06232A;
-    --in: #4FD1AC;
+    /* Los tonos claros del tema oscuro se salían de la banda de luminosidad
+       del validador; estos caen dentro y mantienen deutan ΔE 8.6. */
+    --in: #27A882;
     --in-bg: #10322A;
-    --out: #F0876A;
+    --out: #D96844;
     --out-bg: #34201A;
-    --danger: #F0876A;
+    --danger: #D96844;
   }
 }
 
@@ -605,7 +611,7 @@ body.t-egreso .amt { color: var(--out); }
   position: fixed;
   left: 0; right: 0; bottom: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--hair);
   padding-bottom: var(--safe-b);
@@ -616,12 +622,20 @@ body.t-egreso .amt { color: var(--out); }
   display: grid;
   justify-items: center;
   gap: 0.14rem;
-  padding: 0.6rem 0.2rem 0.55rem;
+  padding: 0.6rem 0.1rem 0.55rem;
   background: none;
   border: 0;
   color: var(--rail);
-  font-size: 0.68rem;
-  letter-spacing: 0.02em;
+  font-size: 0.62rem;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+
+.tab span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tab svg {
@@ -668,3 +682,298 @@ body.t-egreso .amt { color: var(--out); }
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
 }
+
+/* ══ SALUD ═══════════════════════════════════════════ */
+
+/* El margen es un número principal, no una gráfica: un solo valor
+   no gana nada dibujado. La escala de abajo le da contexto. */
+.hero {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 14px;
+  padding: 1.1rem 1.1rem 1.2rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.hero-k {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rail);
+}
+
+.hero-v {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: clamp(2.5rem, 14vw, 3.4rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.hero.pos .hero-v { color: var(--in); }
+.hero.neg .hero-v { color: var(--out); }
+
+.hero-lect {
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.hero.pos .hero-lect { color: var(--in); }
+.hero.neg .hero-lect { color: var(--out); }
+
+.hero-sub {
+  margin: 0.1rem 0 0;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+
+/* Escala con marcas: dice dónde cae el margen sin inventar un puntaje. */
+.hero-escala {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  margin-top: 0.55rem;
+  background: linear-gradient(to right, var(--out-bg) 0 25%, var(--panel) 25% 50%, var(--in-bg) 50% 100%);
+  overflow: hidden;
+}
+
+.hero-escala .marca {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+/* Fichas de indicadores */
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+  display: grid;
+  gap: 0.12rem;
+  align-content: start;
+}
+
+.kpi.ancho { grid-column: 1 / -1; }
+
+.kpi-k {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rail);
+}
+
+.kpi-v {
+  font-family: var(--mono);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.kpi-v.pos { color: var(--in); }
+.kpi-v.neg { color: var(--out); }
+
+.kpi-lect { font-size: 0.82rem; color: var(--ink-soft); line-height: 1.35; }
+
+/* Gráfica de tendencia */
+.figura { margin: 0; display: grid; gap: 0.5rem; }
+
+.figframe {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  padding: 0.9rem 0.7rem 0.6rem;
+  overflow-x: auto;
+}
+
+.figframe svg { display: block; width: 100%; height: auto; color: var(--ink); }
+
+figcaption { font-size: 0.82rem; color: var(--rail); line-height: 1.4; }
+
+.aviso-honesto { margin-top: 1.2rem; font-size: 0.8rem; color: var(--rail); }
+
+/* ══ COMPROMISOS ═════════════════════════════════════ */
+
+.resumen-comp {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  padding: 0.85rem 0.95rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.resumen-comp .rc-v {
+  font-family: var(--mono);
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--out);
+}
+
+.resumen-comp .rc-k {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rail);
+}
+
+.resumen-comp .rc-sub { font-size: 0.84rem; color: var(--ink-soft); }
+
+.comprow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem 0.7rem;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 11px;
+  padding: 0.7rem 0.8rem;
+}
+
+.comprow.pagado { opacity: 0.62; }
+.comprow.urge { border-color: var(--out); }
+
+.comprow .cr-main { min-width: 0; }
+
+.comprow .cr-t {
+  font-weight: 600;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comprow .cr-s { font-size: 0.79rem; color: var(--rail); }
+.comprow .cr-s.urge { color: var(--out); font-weight: 600; }
+
+.comprow .cr-acts { display: flex; align-items: center; gap: 0.3rem; }
+
+.comprow .cr-monto {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92rem;
+  color: var(--out);
+  white-space: nowrap;
+}
+
+.btn-pagar {
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.btn-quitar {
+  background: none;
+  border: 0;
+  color: var(--rail);
+  font-size: 1.1rem;
+  padding: 0.15rem 0.3rem;
+}
+
+.pagado-tag {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--in);
+  white-space: nowrap;
+}
+
+/* Avance de una compra a meses */
+.cr-prog { grid-column: 1 / -1; display: grid; gap: 0.25rem; }
+
+.cr-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.cr-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+
+/* Formularios plegables */
+.agregar { margin-top: 0.15rem; }
+
+.agregar summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.agregar summary::-webkit-details-marker { display: none; }
+
+.formgrid {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding: 0.9rem;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.formgrid input[type="text"],
+.formgrid input[type="number"],
+.formgrid input[type="month"],
+.formgrid select {
+  width: 100%;
+  padding: 0.62rem 0.8rem;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--ground);
+  font-size: 0.95rem;
+}
+
+.campo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.campo input, .campo select { max-width: 11rem; }
+
+/* Avisos en la pantalla de captura */
+.avisos { display: grid; gap: 0.4rem; }
+
+.avisos:empty { display: none; }
+
+.aviso {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid var(--out);
+  background: var(--out-bg);
+  color: var(--out);
+  border-radius: 11px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.aviso b { font-weight: 700; }
+
+.notifbox {
+  margin-top: 0.9rem;
+  border: 1px dashed var(--hair);
+  border-radius: 12px;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.notifbox p { margin: 0; font-size: 0.85rem; color: var(--ink-soft); }
+.notifbox .estado { font-weight: 600; color: var(--ink); }
