@@ -32,6 +32,11 @@ const CATS_DEFAULT = {
   },
 };
 
+/* La categoría es opcional: anotar el monto vale más que clasificarlo bien.
+ * Lo que se guarda sin categoría cae aquí, para que los desgloses y el CSV
+ * lo agrupen como cualquier otra en vez de tener que esquivar huecos. */
+const SIN_CATEGORIA = 'Sin categoría';
+
 const COMP_VACIO = () => ({ ingresos: [], fijos: [], msi: [], tarjetas: [] });
 const RAMAS_COMP = ['ingresos', 'fijos', 'msi', 'tarjetas'];
 
@@ -424,7 +429,8 @@ function lecturaMargen(m) {
 
 function pintarMonto() {
   $('#montoOut').textContent = plain(estado.centavos);
-  $('#guardarBtn').disabled = estado.centavos <= 0 || !estado.categoria;
+  // Solo el monto es obligatorio. Sin categoría se guarda igual.
+  $('#guardarBtn').disabled = estado.centavos <= 0;
 }
 
 /** Solo al registrar una salida: con qué se pagó. Si va a una tarjeta,
@@ -479,7 +485,13 @@ function pintarChips() {
     b.textContent = c;
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(c === estado.categoria));
-    b.addEventListener('click', () => { estado.categoria = c; pintarChips(); pintarMonto(); });
+    // Volver a tocar la elegida la suelta: si es opcional, tiene que
+    // haber forma de arrepentirse sin recargar la app.
+    b.addEventListener('click', () => {
+      estado.categoria = estado.categoria === c ? null : c;
+      pintarChips();
+      pintarMonto();
+    });
     cont.appendChild(b);
   }
 }
@@ -520,13 +532,13 @@ function setFecha(iso) {
 }
 
 async function guardar() {
-  if (estado.centavos <= 0 || !estado.categoria) return;
+  if (estado.centavos <= 0) return;
   const m = {
     id: nuevoId(),
     ambito: estado.ambito,
     tipo: estado.tipo,
     centavos: estado.centavos,
-    categoria: estado.categoria,
+    categoria: estado.categoria || SIN_CATEGORIA,
     fecha: estado.fecha,
     nota: $('#notaInput').value.trim(),
     creado: Date.now(),

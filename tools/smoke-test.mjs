@@ -556,6 +556,42 @@ tap($('.seg[data-tipo="ingreso"]'));
 await esperar(90);
 ok($('#pagoCon').hidden === true, 'al registrar una entrada no pregunta forma de pago');
 
+/* ── 19. La categoría es opcional ───────────────────── */
+
+console.log('\n19. Categoría opcional');
+tap($('.amb[data-amb="consultorio"]'));
+await esperar(220);
+await irA('capturar');
+tap($('.seg[data-tipo="ingreso"]'));
+await esperar(90);
+
+teclear('4'); teclear('0'); teclear('00');   // 40.00, sin tocar categoría
+ok($('#guardarBtn').disabled === false, 'con solo el monto ya se puede guardar');
+
+// Elegir una y soltarla.
+tap($$('#chips .chip')[0]);
+await esperar(70);
+ok($$('#chips .chip')[0].classList.contains('is-on'), 'se puede elegir una categoría');
+tap($$('#chips .chip')[0]);
+await esperar(70);
+ok(!$$('#chips .chip')[0].classList.contains('is-on'), 'y al tocarla otra vez se suelta');
+ok($('#guardarBtn').disabled === false, 'soltarla no impide guardar');
+
+$('#notaInput').value = 'Sin clasificar';
+tap($('#guardarBtn'));
+await esperar(220);
+
+await irA('ajustes');
+tap($('#exportJson'));
+await esperar(250);
+const sc = JSON.parse(ultimoBlob._texto).movimientos.find((m) => m.nota === 'Sin clasificar');
+ok(!!sc, 'el movimiento sin categoría se guardó');
+ok(!!sc && sc.categoria === 'Sin categoría', `y queda como "Sin categoría" (${sc && sc.categoria})`);
+ok(!!sc && sc.centavos === 4000, `con su monto de 40.00 (${sc && sc.centavos})`);
+
+await irA('salud');
+ok($('#barsIn').textContent.includes('Sin categoría'), 'y entra al desglose del mes como una más');
+
 /* ── Resultado ──────────────────────────────────────── */
 
 console.log(`\n${'─'.repeat(58)}`);

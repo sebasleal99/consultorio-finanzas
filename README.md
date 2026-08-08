@@ -9,7 +9,7 @@ App de bolsillo para anotar lo que entra y lo que sale del consultorio.
 Una PWA: se instala en la pantalla de inicio y se abre a pantalla completa como cualquier app, pero por dentro es una página web. No pasa por Google Play, no necesita cuenta de desarrollador, y funciona sin internet.
 
 - **Dos secciones separadas: Consultorio y Personal.** Cada una con sus movimientos, sus categorías y sus totales. No se suman nunca. El acento de color cambia con la sección para que no haya duda de dónde estás anotando
-- Capturar toma tres toques: monto, tipo, categoría
+- Capturar toma dos toques: monto y tipo. **La categoría es opcional** — se anota primero y se clasifica después, o nunca
 - Resumen del mes con desglose por categoría
 - Historial por día
 - Compromisos del mes: nómina e ingresos fijos, gastos fijos, compras a meses y tarjetas, todos en un calendario
@@ -38,7 +38,7 @@ La app **no tiene dependencias**. Las de `package.json` son solo para probarla.
 
 ```
 npm install
-npm test           # 128 comprobaciones del flujo completo, con DOM e IndexedDB falsos
+npm test           # 136 comprobaciones del flujo completo, con DOM e IndexedDB falsos
 npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 ```
 
@@ -57,6 +57,8 @@ npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 **Cada dato guarda cuándo se tocó, y lo borrado deja marca.** Es lo que permite juntar dos aparatos sin perder nada: de dos versiones gana el sello más reciente, y lo que borraste no revive al restaurar un respaldo viejo que todavía lo trae.
 
 **La ausencia no borra.** Juntar nunca quita algo solo porque el otro lado no lo traiga — únicamente la marca de borrado lo hace. Por eso un respaldo incompleto no puede vaciarte la app.
+
+**Lo que se guarda sin categoría queda como `Sin categoría`, no como un hueco.** Así los desgloses, el CSV y los totales lo tratan como una categoría más y no hay que esquivar valores vacíos en ningún lado.
 
 **La forma de pago no se queda pegada.** Al guardar, la app vuelve sola a *Efectivo o débito*: si se quedara la tarjeta seleccionada, el siguiente gasto se le cargaría sin que nadie lo pidiera.
 
