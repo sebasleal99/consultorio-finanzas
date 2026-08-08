@@ -865,6 +865,109 @@ figcaption { font-size: 0.82rem; color: var(--rail); line-height: 1.4; }
   white-space: nowrap;
 }
 
+/* Lo que entra usa el verde del par divergente, igual que en todo lo demás. */
+.comprow.entra .cr-monto { color: var(--in); }
+.comprow.entra .btn-pagar { border-color: var(--in); color: var(--in); }
+.comprow.entra .cr-fill { background: var(--in); }
+
+.resumen-comp .rc-v.entra { color: var(--in); }
+
+.rc-par {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 0.9rem;
+  margin-top: 0.15rem;
+}
+
+.rc-par > div { display: grid; gap: 0.05rem; }
+
+/* Forma de pago: solo aparece al registrar una salida. */
+.pagocon { display: grid; gap: 0.1rem; }
+.pagocon[hidden] { display: none; }
+
+.chip.tarjeta.is-on { background: var(--out); border-color: var(--out); color: #fff; }
+
+.volver {
+  background: none;
+  border: 0;
+  padding: 0.2rem 0;
+  color: var(--accent);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* Nombre de tarjeta pulsable para entrar a su detalle. */
+.comprow .cr-t.enlace { color: var(--accent); text-decoration: underline; text-underline-offset: 0.15em; }
+
+/* Calendario: todo lo del mes en orden de fecha, entradas y salidas juntas. */
+.calendario {
+  display: grid;
+  gap: 0;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.calrow {
+  display: grid;
+  grid-template-columns: 3.1rem minmax(0, 1fr) auto;
+  gap: 0 0.75rem;
+  align-items: center;
+  padding: 0.62rem 0.85rem;
+}
+
+.calrow + .calrow { border-top: 1px solid var(--hair); }
+.calrow.hoy { background: var(--panel); }
+.calrow.hecho { opacity: 0.55; }
+
+.cal-d {
+  text-align: center;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.cal-d .n { display: block; font-size: 1.05rem; }
+.cal-d .m { display: block; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--rail); }
+
+.calrow.hoy .cal-d .n { color: var(--accent); font-weight: 700; }
+
+.cal-t { font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-s { font-size: 0.75rem; color: var(--rail); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cal-v {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  color: var(--out);
+}
+
+.cal-v.entra { color: var(--in); }
+.cal-v.aviso { color: var(--rail); font-size: 0.78rem; }
+
+/* Edición en línea: cambiar el monto sin borrar y volver a crear. */
+.cr-edit {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--hair);
+}
+
+.cr-edit input[type="text"], .cr-edit input[type="number"] {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+  background: var(--ground);
+  font-size: 0.92rem;
+}
+
+.cr-edit .fila2 { display: grid; grid-template-columns: 1fr auto; gap: 0.45rem; align-items: center; }
+.cr-edit .acciones { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; }
+
 .btn-pagar {
   border: 1px solid var(--accent);
   background: transparent;

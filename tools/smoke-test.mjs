@@ -275,9 +275,74 @@ await irA('capturar');
 const esperado = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(diaHoy).padStart(2, '0')}`;
 ok($('#fechaInput').value === esperado, `la fecha usa el día local ${esperado} (dio ${$('#fechaInput').value})`);
 
-/* ── 13. Captura rápida: atajos del icono ───────────── */
+/* ── 13. Nómina e ingresos fijos ────────────────────── */
 
-console.log('\n13. Captura rápida');
+console.log('\n13. Nómina');
+tap($('.amb[data-amb="consultorio"]'));
+await esperar(180);
+await irA('compromisos');
+
+escribir('#nomNombre', 'Nómina');
+escribir('#nomMonto', '18000');
+escribir('#nomDia', '15');
+enviar('#formNomina');
+await esperar(260);
+ok($('#listaNomina').textContent.includes('Nómina'), 'el ingreso fijo aparece');
+ok($('#listaNomina').textContent.includes('18,000.00'), 'con su monto');
+ok($('#listaNomina').querySelector('.comprow').classList.contains('entra'), 'se pinta como algo que entra, no que sale');
+ok($('#listaNomina').querySelector('.btn-pagar').textContent === 'Cobré', 'el botón dice Cobré, no Pagar');
+ok($('#resumenComp').textContent.includes('Falta por cobrar'), 'el resumen separa lo que entra de lo que sale');
+
+// La nómina varía: al cobrarla se ajusta el monto sin tocar la definición.
+window.prompt = () => '17500';
+tap($('#listaNomina').querySelector('.btn-pagar'));
+await esperar(280);
+ok($('#listaNomina').querySelector('.pagado-tag') !== null, 'queda marcada como cobrada');
+ok($('#listaNomina').textContent.includes('17,500.00'), `muestra lo que de verdad entró, no lo planeado (${$('#listaNomina').querySelector('.cr-monto')?.textContent})`);
+
+await irA('salud');
+ok(soloNum($('#totIn').textContent) === '18350.00', `el cobro suma a ingresos: 850 + 17,500 (dio ${$('#totIn').textContent})`);
+ok($('#kpis').textContent.includes('Ingreso asegurado'), 'aparece el indicador de ingreso asegurado');
+
+// El monto base no se movió: sigue siendo 18,000 para el mes que viene.
+await irA('ajustes');
+tap($('#exportJson'));
+await esperar(220);
+const rNom = JSON.parse(ultimoBlob._texto);
+const nomina = rNom.compromisos.consultorio.ingresos[0];
+ok(nomina && nomina.centavos === 1800000, `la definición sigue en 18,000 (${nomina?.centavos})`);
+const movNom = rNom.movimientos.find((m) => m.origen && m.origen.tipo === 'nomina');
+ok(movNom && movNom.centavos === 1750000, `pero el movimiento guardó 17,500 (${movNom?.centavos})`);
+ok(movNom && movNom.tipo === 'ingreso', 'y quedó como ingreso');
+
+/* ── 14. Editar sin perder lo registrado ────────────── */
+
+console.log('\n14. Editar sin perder');
+await irA('compromisos');
+const filaRenta = $$('#listaFijos .comprow').find((r) => r.textContent.includes('Renta'));
+ok(!!filaRenta, 'la fila de Renta sigue ahí');
+tap([...filaRenta.querySelectorAll('.btn-quitar')].find((b) => b.textContent === '✎'));
+await esperar(120);
+ok(filaRenta.querySelector('.cr-edit') !== null, 'se abre la edición en línea');
+
+const inputs = filaRenta.querySelectorAll('.cr-edit input');
+inputs[0].value = 'Renta del local';
+inputs[1].value = '9500';
+tap([...filaRenta.querySelectorAll('.cr-edit button')].find((b) => b.textContent === 'Guardar'));
+await esperar(280);
+
+ok($('#listaFijos').textContent.includes('Renta del local'), 'el nombre cambió');
+ok($('#listaFijos').textContent.includes('9,500.00'), 'y el monto también');
+
+await irA('salud');
+ok(soloNum($('#totOut').textContent) === '10320.00', `el pago YA registrado sigue en 9,000: los egresos no se movieron (dio ${$('#totOut').textContent})`);
+
+await irA('historial');
+ok($('#lista').textContent.includes('Renta'), 'el movimiento viejo conserva su nota original');
+
+/* ── 15. Captura rápida: atajos del icono ───────────── */
+
+console.log('\n15. Captura rápida');
 const man = JSON.parse(readFileSync(join(ROOT, 'manifest.webmanifest'), 'utf8'));
 ok(Array.isArray(man.shortcuts) && man.shortcuts.length === 2, `el manifiesto declara 2 atajos (${man.shortcuts?.length})`);
 ok(man.shortcuts?.[0].url === './?t=ingreso', 'el primero abre en modo ingreso');

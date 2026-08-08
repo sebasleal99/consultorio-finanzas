@@ -48,6 +48,11 @@
 
   <div class="chips" id="chips" role="radiogroup" aria-label="Categoría"></div>
 
+  <div class="pagocon" id="pagoCon" hidden>
+    <p class="extra-k">¿Con qué lo pagaste?</p>
+    <div class="chips" id="chipsTarjeta" role="radiogroup" aria-label="Forma de pago"></div>
+  </div>
+
   <label class="notafield">
     <span class="sr">Nota opcional</span>
     <input type="text" id="notaInput" placeholder="Nota (opcional)" maxlength="80" autocomplete="off">
@@ -124,6 +129,26 @@
 
   <div class="resumen-comp" id="resumenComp"></div>
 
+  <h2 class="subhead">Calendario del mes</h2>
+  <div class="calendario" id="calendario"></div>
+
+  <!-- Nómina e ingresos fijos -->
+  <h2 class="subhead">Nómina e ingresos fijos</h2>
+  <div class="catedit" id="listaNomina"></div>
+  <details class="agregar">
+    <summary class="btn btn-ghost">+ Agregar nómina o ingreso fijo</summary>
+    <form class="formgrid" id="formNomina">
+      <input type="text" id="nomNombre" placeholder="Nombre (Nómina, Renta que cobro…)" maxlength="28" required>
+      <input type="text" id="nomMonto" inputmode="decimal" placeholder="Monto que entra al mes" required>
+      <label class="campo">
+        <span>Día que entra</span>
+        <input type="number" id="nomDia" min="1" max="31" value="15" required>
+      </label>
+      <p class="note">Si el monto cambia mes con mes, no importa: al cobrarlo puedes ajustarlo sin tocar el registro.</p>
+      <button type="submit" class="btn btn-primary">Guardar ingreso fijo</button>
+    </form>
+  </details>
+
   <!-- Gastos fijos -->
   <h2 class="subhead">Gastos fijos del mes</h2>
   <div class="catedit" id="listaFijos"></div>
@@ -156,6 +181,10 @@
         <span>Primer mes de pago</span>
         <input type="month" id="msiInicio" required>
       </label>
+      <label class="campo">
+        <span>¿En qué tarjeta?</span>
+        <select id="msiTarjeta"><option value="">Sin tarjeta</option></select>
+      </label>
       <p class="note" id="msiPreview"></p>
       <button type="submit" class="btn btn-primary">Guardar compra a meses</button>
     </form>
@@ -168,6 +197,10 @@
     <summary class="btn btn-ghost">+ Agregar tarjeta</summary>
     <form class="formgrid" id="formTarjeta">
       <input type="text" id="tarNombre" placeholder="Nombre del banco o tarjeta" maxlength="28" required>
+      <label class="campo">
+        <span>Día de corte</span>
+        <input type="number" id="tarDiaCorte" min="1" max="31" value="1" required>
+      </label>
       <label class="campo">
         <span>Día límite de pago</span>
         <input type="number" id="tarDiaPago" min="1" max="31" value="15" required>
@@ -187,6 +220,26 @@
   </details>
 
   <div class="notifbox" id="notifBox"></div>
+</section>
+
+<!-- ══ DETALLE DE UNA TARJETA ════════════════════════ -->
+<section class="screen" id="screen-tarjeta" data-screen="tarjeta" hidden>
+  <header class="topbar">
+    <button type="button" class="volver" id="tjVolver" aria-label="Volver a Compromisos">&#8249; Compromisos</button>
+  </header>
+  <h1 id="tjNombre">Tarjeta</h1>
+  <p class="note" id="tjFechas"></p>
+
+  <div class="totals">
+    <div class="tot tot-out"><span class="tot-k">Cargado este mes</span><span class="tot-v" id="tjMes">$0.00</span></div>
+    <div class="tot tot-out"><span class="tot-k">Debes a meses</span><span class="tot-v" id="tjDeuda">$0.00</span></div>
+  </div>
+
+  <h2 class="subhead">Compras a meses en esta tarjeta</h2>
+  <div class="catedit" id="tjMsi"></div>
+
+  <h2 class="subhead">Gastos cargados a esta tarjeta</h2>
+  <div class="list" id="tjMovs"></div>
 </section>
 
 <!-- ══ HISTORIAL ═════════════════════════════════════ -->

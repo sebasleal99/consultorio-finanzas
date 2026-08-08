@@ -32,7 +32,8 @@ const CATS_DEFAULT = {
   },
 };
 
-const COMP_VACIO = () => ({ fijos: [], msi: [], tarjetas: [] });
+const COMP_VACIO = () => ({ ingresos: [], fijos: [], msi: [], tarjetas: [] });
+const RAMAS_COMP = ['ingresos', 'fijos', 'msi', 'tarjetas'];
 
 const MXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
 const NUM = new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -81,6 +82,21 @@ function etiquetaFecha(iso) {
   if (iso === hoyISO(ayer)) return 'Ayer';
   const [y, m, d] = iso.split('-').map(Number);
   return `${d} ${MES3[m - 1]} ${y}`;
+}
+
+/** Un día del mes, recortado al último día real de ese mes: si pagas el 31
+ *  y el mes tiene 30, cae el 30. */
+function diaClamp(dia, periodo) {
+  const [y, m] = periodo.split('-').map(Number);
+  return Math.min(dia, new Date(y, m, 0).getDate());
+}
+
+const fechaDe = (dia, periodo) => `${periodo}-${String(diaClamp(dia, periodo)).padStart(2, '0')}`;
+
+/** "5 de ago" — la fecha real, no solo el número del día. */
+function textoDiaMes(dia, periodo) {
+  const [, m] = periodo.split('-').map(Number);
+  return `${diaClamp(dia, periodo)} de ${MES3[m - 1]}`;
 }
 
 /** Días de aquí al próximo día `dia` del mes. 0 = hoy. */
@@ -242,6 +258,38 @@ function saldoMsi(m) {
   return s;
 }
 
+const tarjetaPorId = (id) => (compAmbito().tarjetas || []).find((t) => t.id === id);
+
+/** Lo que aún debes en una tarjeta por compras a meses. Baja sola conforme
+ *  registras cada mensualidad: es el mismo saldo, visto desde la tarjeta. */
+function deudaTarjeta(tid) {
+  return (compAmbito().msi || [])
+    .filter((m) => m.tarjetaId === tid)
+    .reduce((a, m) => a + saldoMsi(m), 0);
+}
+
+/** Mensualidades que caen en esa tarjeta este mes. */
+function cargaTarjeta(tid, periodo) {
+  let total = 0;
+  let pendiente = 0;
+  for (const m of (compAmbito().msi || [])) {
+    if (m.tarjetaId !== tid) continue;
+    const i = indiceCuota(m, periodo);
+    if (i === null) continue;
+    const c = cuotaMsi(m, i);
+    total += c;
+    if (!pagoRegistrado('msi', m.id, periodo)) pendiente += c;
+  }
+  return { total, pendiente };
+}
+
+/** El día en que se paga una mensualidad: el del pago de su tarjeta, o el
+ *  primero del mes si no está ligada a ninguna. */
+function diaDeCuota(m) {
+  const t = m.tarjetaId ? tarjetaPorId(m.tarjetaId) : null;
+  return t ? t.diaPago : 1;
+}
+
 /** Todo lo comprometido en un periodo: fijos + cuotas de ese mes. */
 function compromisosDe(periodo) {
   const c = compAmbito();
@@ -253,11 +301,24 @@ function compromisosDe(periodo) {
     const i = indiceCuota(m, periodo);
     if (i === null) continue;
     filas.push({
-      tipo: 'msi', ref: m, nombre: m.nombre, centavos: cuotaMsi(m, i), dia: null,
+      tipo: 'msi', ref: m, nombre: m.nombre, centavos: cuotaMsi(m, i), dia: diaDeCuota(m),
       pagado: !!pagoRegistrado('msi', m.id, periodo), cuota: i + 1, de: m.meses,
     });
   }
   return filas;
+}
+
+/** Lo que se espera que entre en un periodo: nómina e ingresos fijos. */
+function ingresosDe(periodo) {
+  return (compAmbito().ingresos || []).map((f) => {
+    const mv = pagoRegistrado('nomina', f.id, periodo);
+    return {
+      tipo: 'nomina', ref: f, nombre: f.nombre,
+      // Si ya se cobró, se muestra lo que de verdad entró, no lo planeado.
+      centavos: mv ? mv.centavos : f.centavos,
+      dia: f.dia, pagado: !!mv, entra: true,
+    };
+  });
 }
 
 /* ── Salud: métricas ────────────────────────────────── */
@@ -294,6 +355,34 @@ function pintarMonto() {
   $('#guardarBtn').disabled = estado.centavos <= 0 || !estado.categoria;
 }
 
+/** Solo al registrar una salida: con qué se pagó. Si va a una tarjeta,
+ *  el gasto queda ligado a ella y aparece en su apartado. */
+function pintarChipsTarjeta() {
+  const caja = $('#pagoCon');
+  const cont = $('#chipsTarjeta');
+  if (!caja || !cont) return;
+  const tarjetas = compAmbito().tarjetas || [];
+  const mostrar = estado.tipo === 'egreso' && tarjetas.length > 0;
+  caja.hidden = !mostrar;
+  if (!mostrar) { estado.tarjetaSel = null; return; }
+
+  if (estado.tarjetaSel && !tarjetas.some((t) => t.id === estado.tarjetaSel)) estado.tarjetaSel = null;
+
+  cont.innerHTML = '';
+  const opciones = [{ id: null, nombre: 'Efectivo o débito' }].concat(tarjetas);
+  for (const o of opciones) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    const on = estado.tarjetaSel === o.id;
+    b.className = 'chip' + (o.id ? ' tarjeta' : '') + (on ? ' is-on' : '');
+    b.textContent = o.id ? o.nombre : o.nombre;
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(on));
+    b.addEventListener('click', () => { estado.tarjetaSel = o.id; pintarChipsTarjeta(); });
+    cont.appendChild(b);
+  }
+}
+
 function pintarChips() {
   const cont = $('#chips');
   cont.innerHTML = '';
@@ -321,6 +410,7 @@ function setTipo(t) {
     b.setAttribute('aria-checked', String(on));
   });
   pintarChips();
+  pintarChipsTarjeta();
   pintarMonto();
   pintarCategorias();
 }
@@ -428,6 +518,21 @@ function pintarKpis(p) {
   const ms = movsDelPeriodo(p);
 
   // 1. Comprometido: lo que ya está apalabrado antes de empezar el mes.
+  // Ingreso asegurado: cuánto de lo que entró era recurrente y previsible.
+  // Vivir de ingreso variable no es lo mismo que vivir de nómina.
+  const recurrente = movsDelPeriodo(p)
+    .filter((m) => m.tipo === 'ingreso' && m.origen && m.origen.tipo === 'nomina')
+    .reduce((a, b) => a + b.centavos, 0);
+  if (entro > 0 && (recurrente > 0 || (compAmbito().ingresos || []).length > 0)) {
+    const pct = Math.round((recurrente / entro) * 100);
+    cont.appendChild(ficha(
+      'Ingreso asegurado', pct + '%',
+      pct >= 60 ? `${pct}% de lo que entró era fijo y previsible.`
+        : `Solo ${pct}% de lo que entró era fijo; el resto es variable.`,
+      pct >= 60 ? 'pos' : '',
+    ));
+  }
+
   const comps = compromisosDe(p);
   const comprometido = comps.reduce((a, b) => a + b.centavos, 0);
   if (comprometido > 0) {
@@ -635,11 +740,26 @@ function moverMes(delta) {
 /* ── Pintado: compromisos ───────────────────────────── */
 
 async function marcarPagado(fila, periodo) {
-  const cat = fila.tipo === 'msi' ? 'Otro' : (fila.nombre in {} ? 'Otro' : fila.nombre);
-  const cats = estado.cats[estado.ambito].egreso;
-  const categoria = cats.includes(cat) ? cat : (cats.includes('Otro') ? 'Otro' : (cats[0] || 'Otro'));
+  const esIngreso = fila.tipo === 'nomina';
+  let centavos = fila.centavos;
 
-  // La fecha del pago: el día pactado de ese mes, o hoy si es el mes en curso.
+  // La nómina casi nunca cae igual dos meses seguidos, así que se puede
+  // ajustar al registrarla. El monto base del ingreso fijo no se toca.
+  if (esIngreso) {
+    const txt = prompt(`¿Cuánto entró de ${fila.nombre}?`, (fila.ref.centavos / 100).toFixed(2));
+    if (txt === null) return;
+    const c = aCentavos(txt);
+    if (c <= 0) { toast('Monto no válido'); return; }
+    centavos = c;
+  }
+
+  const lista = esIngreso ? estado.cats[estado.ambito].ingreso : estado.cats[estado.ambito].egreso;
+  const preferida = fila.tipo === 'msi' ? 'Otro' : fila.nombre;
+  const categoria = lista.includes(preferida)
+    ? preferida
+    : (lista.includes('Otro') ? 'Otro' : (lista.includes('Otro ingreso') ? 'Otro ingreso' : (lista[0] || 'Otro')));
+
+  // La fecha: el día pactado de ese mes, o hoy si es el mes en curso.
   let fecha;
   if (periodo === periodoHoy()) {
     fecha = hoyISO();
@@ -652,8 +772,8 @@ async function marcarPagado(fila, periodo) {
   const mov = {
     id: nuevoId(),
     ambito: estado.ambito,
-    tipo: 'egreso',
-    centavos: fila.centavos,
+    tipo: esIngreso ? 'ingreso' : 'egreso',
+    centavos,
     categoria,
     fecha,
     nota: fila.tipo === 'msi' ? `${fila.nombre} · cuota ${fila.cuota} de ${fila.de}` : fila.nombre,
@@ -662,11 +782,94 @@ async function marcarPagado(fila, periodo) {
   };
   await guardarMov(mov);
   estado.movs.push(mov);
-  toast(`Pagado ${money(fila.centavos)} · ${fila.nombre}`);
+  toast(`${esIngreso ? 'Cobrado' : 'Pagado'} ${money(centavos)} · ${fila.nombre}`);
   pintarCompromisos();
   pintarSalud();
   pintarHistorial();
 }
+
+/** Edición en línea. Cambia la definición, nunca los movimientos ya
+ *  registrados: lo que cobraste o pagaste en meses pasados se queda como fue.
+ *  `campos` es una lista de { k, etiqueta, tipo } sobre el propio objeto. */
+function abrirEdicion(row, item, campos, onGuardar) {
+  if (row.querySelector('.cr-edit')) return;
+  const box = document.createElement('div');
+  box.className = 'cr-edit';
+
+  const inputs = {};
+  for (const c of campos) {
+    const inp = document.createElement('input');
+    inp.setAttribute('aria-label', c.etiqueta);
+    if (c.tipo === 'monto') {
+      inp.type = 'text'; inp.inputMode = 'decimal';
+      inp.value = (item[c.k] / 100).toFixed(2);
+    } else if (c.tipo === 'dia') {
+      inp.type = 'number'; inp.min = '1'; inp.max = '31';
+      inp.value = String(item[c.k]);
+    } else {
+      inp.type = 'text'; inp.maxLength = 28;
+      inp.value = item[c.k] || '';
+    }
+    inputs[c.k] = inp;
+
+    if (c.tipo === 'texto') {
+      box.appendChild(inp);
+    } else {
+      const lab = document.createElement('label');
+      lab.className = 'campo';
+      const sp = document.createElement('span');
+      sp.textContent = c.etiqueta;
+      lab.append(sp, inp);
+      box.appendChild(lab);
+    }
+  }
+
+  const acciones = document.createElement('div');
+  acciones.className = 'acciones';
+  const cancelar = document.createElement('button');
+  cancelar.type = 'button'; cancelar.className = 'btn btn-sm'; cancelar.textContent = 'Cancelar';
+  cancelar.addEventListener('click', () => box.remove());
+  const guardar = document.createElement('button');
+  guardar.type = 'button'; guardar.className = 'btn btn-sm btn-primary'; guardar.textContent = 'Guardar';
+  guardar.addEventListener('click', async () => {
+    const pend = {};
+    for (const c of campos) {
+      const v = inputs[c.k].value;
+      if (c.tipo === 'monto') {
+        const cent = aCentavos(v);
+        if (cent <= 0) { toast('Monto no válido'); return; }
+        pend[c.k] = cent;
+      } else if (c.tipo === 'dia') {
+        pend[c.k] = Math.min(31, Math.max(1, parseInt(v, 10) || 1));
+      } else {
+        const n = v.trim();
+        if (!n) { toast('El nombre no puede quedar vacío'); return; }
+        pend[c.k] = n;
+      }
+    }
+    Object.assign(item, pend);
+    await onGuardar();
+    toast('Actualizado. Lo ya registrado no se tocó.');
+  });
+  acciones.append(cancelar, guardar);
+
+  box.appendChild(acciones);
+  row.appendChild(box);
+  const primero = box.querySelector('input');
+  if (primero) primero.focus();
+}
+
+const CAMPOS_MONTO = [
+  { k: 'nombre', etiqueta: 'Nombre', tipo: 'texto' },
+  { k: 'centavos', etiqueta: 'Monto', tipo: 'monto' },
+  { k: 'dia', etiqueta: 'Día', tipo: 'dia' },
+];
+
+const CAMPOS_TARJETA = [
+  { k: 'nombre', etiqueta: 'Nombre', tipo: 'texto' },
+  { k: 'diaCorte', etiqueta: 'Día de corte', tipo: 'dia' },
+  { k: 'diaPago', etiqueta: 'Día de pago', tipo: 'dia' },
+];
 
 async function deshacerPago(mov) {
   await borrarMov(mov.id);
@@ -679,7 +882,7 @@ async function deshacerPago(mov) {
 
 function filaCompromiso(fila, periodo) {
   const row = document.createElement('div');
-  row.className = 'comprow' + (fila.pagado ? ' pagado' : '');
+  row.className = 'comprow' + (fila.pagado ? ' pagado' : '') + (fila.entra ? ' entra' : '');
 
   const main = document.createElement('div');
   main.className = 'cr-main';
@@ -688,12 +891,17 @@ function filaCompromiso(fila, periodo) {
   t.textContent = fila.nombre;
   const s = document.createElement('div');
   s.className = 'cr-s';
-  if (fila.tipo === 'fijo') {
-    const d = diasParaDia(fila.dia);
-    s.textContent = fila.pagado ? `Día ${fila.dia} · pagado` : `Día ${fila.dia} · ${d === 0 ? 'es hoy' : `en ${d} día${d === 1 ? '' : 's'}`}`;
-    if (!fila.pagado && d <= 3) { s.classList.add('urge'); row.classList.add('urge'); }
+  const per = periodo || periodoVista();
+  if (fila.tipo === 'msi') {
+    const tj = fila.ref.tarjetaId ? tarjetaPorId(fila.ref.tarjetaId) : null;
+    s.textContent = `Cuota ${fila.cuota} de ${fila.de} · ${textoDiaMes(fila.dia, per)}` + (tj ? ` · ${tj.nombre}` : '');
   } else {
-    s.textContent = `Cuota ${fila.cuota} de ${fila.de}`;
+    const d = diasParaDia(fila.dia);
+    const hecho = fila.entra ? 'cobrado' : 'pagado';
+    s.textContent = fila.pagado
+      ? `${textoDiaMes(fila.dia, per)} · ${hecho}`
+      : `${textoDiaMes(fila.dia, per)} · ${d === 0 ? 'es hoy' : `en ${d} día${d === 1 ? '' : 's'}`}`;
+    if (!fila.pagado && d <= 3 && !fila.entra) { s.classList.add('urge'); row.classList.add('urge'); }
   }
   main.append(t, s);
 
@@ -724,8 +932,8 @@ function filaCompromiso(fila, periodo) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'btn-pagar';
-    b.textContent = 'Pagar';
-    b.setAttribute('aria-label', `Registrar el pago de ${fila.nombre}`);
+    b.textContent = fila.entra ? 'Cobré' : 'Pagar';
+    b.setAttribute('aria-label', `Registrar ${fila.entra ? 'el cobro' : 'el pago'} de ${fila.nombre}`);
     b.addEventListener('click', () => marcarPagado(fila, periodo));
     acts.appendChild(b);
   }
@@ -755,33 +963,168 @@ function filaCompromiso(fila, periodo) {
   return row;
 }
 
+/** Botón de lápiz que abre la edición en línea de un compromiso. */
+function botonEditar(row, item, campos, onGuardar) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn-quitar';
+  b.textContent = '✎';
+  b.setAttribute('aria-label', `Editar ${item.nombre}`);
+  b.addEventListener('click', () => abrirEdicion(row, item, campos, onGuardar));
+  return b;
+}
+
+/** Calendario del mes: nómina, gastos fijos, mensualidades y cortes de
+ *  tarjeta, todos en la misma línea de tiempo y ordenados por fecha real.
+ *  Es la vista donde se ve que todo está amarrado entre sí. */
+function pintarCalendario(periodo) {
+  const cont = $('#calendario');
+  if (!cont) return;
+  cont.innerHTML = '';
+  const c = compAmbito();
+  const eventos = [];
+
+  for (const f of ingresosDe(periodo)) {
+    eventos.push({ dia: f.dia, t: f.nombre, s: 'Ingreso fijo', v: f.centavos, entra: true, hecho: f.pagado });
+  }
+  for (const f of compromisosDe(periodo)) {
+    const tj = f.tipo === 'msi' && f.ref.tarjetaId ? tarjetaPorId(f.ref.tarjetaId) : null;
+    eventos.push({
+      dia: f.dia,
+      t: f.nombre,
+      s: f.tipo === 'msi'
+        ? `Mensualidad ${f.cuota} de ${f.de}${tj ? ' · ' + tj.nombre : ''}`
+        : 'Gasto fijo',
+      v: f.centavos, entra: false, hecho: f.pagado,
+    });
+  }
+  for (const t of (c.tarjetas || [])) {
+    if (t.diaCorte) eventos.push({ dia: t.diaCorte, t: t.nombre, s: 'Corte de la tarjeta', aviso: 'corte' });
+    const carga = cargaTarjeta(t.id, periodo);
+    eventos.push({
+      dia: t.diaPago, t: t.nombre,
+      s: carga.total > 0 ? 'Pago de la tarjeta · lleva mensualidades' : 'Pago de la tarjeta',
+      aviso: 'pago',
+    });
+  }
+
+  if (eventos.length === 0) {
+    cont.innerHTML = '<p class="empty">Nada agendado este mes. Lo que agregues abajo aparece aquí con su fecha.</p>';
+    return;
+  }
+
+  const hoy = hoyISO();
+  eventos.sort((a, b) => diaClamp(a.dia, periodo) - diaClamp(b.dia, periodo));
+
+  for (const e of eventos) {
+    const iso = fechaDe(e.dia, periodo);
+    const row = document.createElement('div');
+    row.className = 'calrow' + (iso === hoy ? ' hoy' : '') + (e.hecho ? ' hecho' : '');
+
+    const d = document.createElement('div');
+    d.className = 'cal-d';
+    const [, mm] = periodo.split('-').map(Number);
+    d.innerHTML = `<span class="n">${diaClamp(e.dia, periodo)}</span><span class="m">${MES3[mm - 1]}</span>`;
+
+    const mid = document.createElement('div');
+    const t = document.createElement('div'); t.className = 'cal-t'; t.textContent = e.t;
+    const s = document.createElement('div'); s.className = 'cal-s';
+    s.textContent = e.hecho ? e.s + ' · ' + (e.entra ? 'cobrado' : 'pagado') : e.s;
+    mid.append(t, s);
+
+    const v = document.createElement('div');
+    if (e.aviso) {
+      v.className = 'cal-v aviso';
+      v.textContent = e.aviso === 'corte' ? 'corte' : 'pago';
+    } else {
+      v.className = 'cal-v' + (e.entra ? ' entra' : '');
+      v.textContent = (e.entra ? '+' : '−') + money(e.v).replace('$', '$ ');
+    }
+
+    row.append(d, mid, v);
+    cont.appendChild(row);
+  }
+}
+
 function pintarCompromisos() {
   const periodo = periodoVista();
   const c = compAmbito();
   const filas = compromisosDe(periodo);
+  const entradas = ingresosDe(periodo);
 
-  // Resumen
+  // Resumen: lo que entra y lo que sale, por separado.
   const total = filas.reduce((a, b) => a + b.centavos, 0);
   const pagado = filas.filter((f) => f.pagado).reduce((a, b) => a + b.centavos, 0);
+  const totalIn = entradas.reduce((a, b) => a + b.centavos, 0);
+  const cobrado = entradas.filter((f) => f.pagado).reduce((a, b) => a + b.centavos, 0);
+
   const rc = $('#resumenComp');
   rc.innerHTML = '';
-  if (filas.length === 0) {
-    rc.innerHTML = '<p class="note">Todavía no registras compromisos. Agrégalos abajo y aparecerán aquí cada mes.</p>';
+  if (filas.length === 0 && entradas.length === 0) {
+    rc.innerHTML = '<p class="note">Todavía no registras compromisos. Agrégalos abajo y aparecerán aquí cada mes, solos.</p>';
   } else {
     const k = document.createElement('span');
     k.className = 'rc-k';
-    k.textContent = `Comprometido en ${nombrePeriodo(periodo)}`;
-    const v = document.createElement('span');
-    v.className = 'rc-v';
-    v.textContent = money(total - pagado);
+    k.textContent = nombrePeriodo(periodo);
+    rc.appendChild(k);
+
+    const par = document.createElement('div');
+    par.className = 'rc-par';
+    if (entradas.length > 0) {
+      const d = document.createElement('div');
+      const kk = document.createElement('span'); kk.className = 'rc-k'; kk.textContent = 'Falta por cobrar';
+      const vv = document.createElement('span'); vv.className = 'rc-v entra'; vv.textContent = money(totalIn - cobrado);
+      d.append(kk, vv);
+      par.appendChild(d);
+    }
+    if (filas.length > 0) {
+      const d = document.createElement('div');
+      const kk = document.createElement('span'); kk.className = 'rc-k'; kk.textContent = 'Falta por pagar';
+      const vv = document.createElement('span'); vv.className = 'rc-v'; vv.textContent = money(total - pagado);
+      d.append(kk, vv);
+      par.appendChild(d);
+    }
+    rc.appendChild(par);
+
     const sub = document.createElement('span');
     sub.className = 'rc-sub';
-    sub.textContent = total === pagado
-      ? `Todo pagado. ${money(total)} en total este mes.`
-      : `Pendiente de ${money(total)}. Ya pagaste ${money(pagado)}.`;
-    rc.append(k, v, sub);
+    const partes = [];
+    if (entradas.length > 0) partes.push(`cobrado ${money(cobrado)} de ${money(totalIn)}`);
+    if (filas.length > 0) partes.push(`pagado ${money(pagado)} de ${money(total)}`);
+    sub.textContent = 'Este mes llevas ' + partes.join(' · ') + '.';
+    rc.appendChild(sub);
   }
   $('#compMes').textContent = NOMBRE_AMBITO[estado.ambito];
+
+  // Nómina e ingresos fijos
+  const ln = $('#listaNomina');
+  ln.innerHTML = '';
+  if (entradas.length === 0) {
+    ln.innerHTML = '<p class="note">Ninguno. Tu nómina, una renta que cobres, un pago que te llega cada mes.</p>';
+  } else {
+    for (const f of entradas.sort((a, b) => a.dia - b.dia)) {
+      const row = filaCompromiso(f, periodo);
+      const acts = row.querySelector('.cr-acts');
+      acts.appendChild(botonEditar(row, f.ref, CAMPOS_MONTO, async () => {
+        await guardarComp();
+        pintarCompromisos();
+        pintarSalud();
+      }));
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'btn-quitar'; del.innerHTML = '&times;';
+      del.setAttribute('aria-label', `Quitar ${f.nombre}`);
+      del.addEventListener('click', async () => {
+        if (!confirm(`¿Quitar "${f.nombre}"? Los cobros ya registrados se quedan en el historial.`)) return;
+        c.ingresos = c.ingresos.filter((x) => x.id !== f.ref.id);
+        estado.comp[estado.ambito] = c;
+        await guardarComp();
+        pintarCompromisos();
+        pintarSalud();
+      });
+      acts.appendChild(del);
+      ln.appendChild(row);
+    }
+  }
 
   // Gastos fijos
   const lf = $('#listaFijos');
@@ -792,6 +1135,11 @@ function pintarCompromisos() {
   } else {
     for (const f of fijos.sort((a, b) => a.dia - b.dia)) {
       const row = filaCompromiso(f, periodo);
+      row.querySelector('.cr-acts').appendChild(botonEditar(row, f.ref, CAMPOS_MONTO, async () => {
+        await guardarComp();
+        pintarCompromisos();
+        pintarSalud();
+      }));
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'btn-quitar';
@@ -867,10 +1215,36 @@ function pintarCompromisos() {
       tt.textContent = t.nombre;
       const ss = document.createElement('div');
       ss.className = 'cr-s' + (urge ? ' urge' : '');
-      ss.textContent = d === 0 ? `Se paga HOY (día ${t.diaPago})` : `Día ${t.diaPago} · faltan ${d} día${d === 1 ? '' : 's'}`;
+      const corte = t.diaCorte ? `Corte ${textoDiaMes(t.diaCorte, periodo)} · ` : '';
+      ss.textContent = d === 0
+        ? `${corte}se paga HOY (${textoDiaMes(t.diaPago, periodo)})`
+        : `${corte}paga ${textoDiaMes(t.diaPago, periodo)} · faltan ${d} día${d === 1 ? '' : 's'}`;
       main.append(tt, ss);
+
+      // Lo que esta tarjeta trae de mensualidades: se mueve solo conforme
+      // registras cada cuota. Ese es el amarre entre las dos listas.
+      const carga = cargaTarjeta(t.id, periodo);
+      const deuda = deudaTarjeta(t.id);
+      if (carga.total > 0 || deuda > 0) {
+        const extra = document.createElement('div');
+        extra.className = 'cr-s';
+        const trozos = [];
+        if (carga.total > 0) {
+          trozos.push(carga.pendiente > 0
+            ? `${money(carga.pendiente)} en mensualidades este mes`
+            : `mensualidades del mes ya pagadas (${money(carga.total)})`);
+        }
+        if (deuda > 0) trozos.push(`debes ${money(deuda)} a meses`);
+        extra.textContent = trozos.join(' · ');
+        main.appendChild(extra);
+      }
       const acts = document.createElement('div');
       acts.className = 'cr-acts';
+      acts.appendChild(botonEditar(row, t, CAMPOS_TARJETA, async () => {
+        await guardarComp();
+        pintarCompromisos();
+        pintarAvisos();
+      }));
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'btn-quitar';
@@ -890,7 +1264,28 @@ function pintarCompromisos() {
     }
   }
 
+  pintarCalendario(periodo);
+  pintarSelectTarjetas();
   pintarNotifBox();
+}
+
+/** El selector de tarjeta del formulario de compras a meses. */
+function pintarSelectTarjetas() {
+  const sel = $('#msiTarjeta');
+  if (!sel) return;
+  const previo = sel.value;
+  sel.innerHTML = '';
+  const cero = document.createElement('option');
+  cero.value = '';
+  cero.textContent = 'Sin tarjeta';
+  sel.appendChild(cero);
+  for (const t of (compAmbito().tarjetas || [])) {
+    const o = document.createElement('option');
+    o.value = t.id;
+    o.textContent = t.nombre;
+    sel.appendChild(o);
+  }
+  if ([...sel.options].some((o) => o.value === previo)) sel.value = previo;
 }
 
 /* ── Avisos y notificaciones ────────────────────────── */
@@ -1281,7 +1676,7 @@ async function importar(file) {
     for (const a of AMBITOS) {
       const src = data.compromisos[a];
       if (!src) continue;
-      for (const k of ['fijos', 'msi', 'tarjetas']) {
+      for (const k of RAMAS_COMP) {
         const dst = estado.comp[a][k];
         for (const it of src[k] || []) if (!dst.some((x) => x.id === it.id)) dst.push(it);
       }
@@ -1364,7 +1759,7 @@ async function init() {
   if (comp) {
     for (const a of AMBITOS) {
       if (!comp[a]) continue;
-      for (const k of ['fijos', 'msi', 'tarjetas']) {
+      for (const k of RAMAS_COMP) {
         if (Array.isArray(comp[a][k])) estado.comp[a][k] = comp[a][k];
       }
     }
@@ -1435,6 +1830,23 @@ async function init() {
     });
   });
 
+  // Nómina e ingreso fijo
+  $('#formNomina').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nombre = $('#nomNombre').value.trim();
+    const cent = aCentavos($('#nomMonto').value);
+    const dia = Math.min(31, Math.max(1, parseInt($('#nomDia').value, 10) || 1));
+    if (!nombre) return;
+    if (cent <= 0) { toast('Escribe un monto válido'); return; }
+    estado.comp[estado.ambito].ingresos.push({ id: nuevoId(), nombre, centavos: cent, dia });
+    await guardarComp();
+    $('#nomNombre').value = ''; $('#nomMonto').value = '';
+    const d = e.target.closest('details'); if (d) d.open = false;
+    pintarCompromisos();
+    pintarSalud();
+    toast(`"${nombre}" agregado a ingresos fijos`);
+  });
+
   // Gasto fijo
   $('#formFijo').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1472,7 +1884,8 @@ async function init() {
     if (!nombre) return;
     if (total <= 0) { toast('Escribe el monto total'); return; }
     if (meses < 2) { toast('Tienen que ser 2 meses o más'); return; }
-    estado.comp[estado.ambito].msi.push({ id: nuevoId(), nombre, totalCentavos: total, meses, inicio });
+    const tarjetaId = $('#msiTarjeta').value || null;
+    estado.comp[estado.ambito].msi.push({ id: nuevoId(), nombre, totalCentavos: total, meses, inicio, tarjetaId });
     await guardarComp();
     $('#msiNombre').value = ''; $('#msiTotal').value = ''; $('#msiPreview').textContent = '';
     e.target.closest('details').open = false;
@@ -1485,10 +1898,11 @@ async function init() {
   $('#formTarjeta').addEventListener('submit', async (e) => {
     e.preventDefault();
     const nombre = $('#tarNombre').value.trim();
+    const diaCorte = Math.min(31, Math.max(1, parseInt($('#tarDiaCorte').value, 10) || 1));
     const diaPago = Math.min(31, Math.max(1, parseInt($('#tarDiaPago').value, 10) || 1));
     const aviso = parseInt($('#tarAviso').value, 10);
     if (!nombre) return;
-    estado.comp[estado.ambito].tarjetas.push({ id: nuevoId(), nombre, diaPago, aviso });
+    estado.comp[estado.ambito].tarjetas.push({ id: nuevoId(), nombre, diaCorte, diaPago, aviso });
     await guardarComp();
     $('#tarNombre').value = '';
     e.target.closest('details').open = false;
