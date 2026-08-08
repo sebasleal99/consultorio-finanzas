@@ -392,13 +392,14 @@ await irA('capturar');
 tap($('.seg[data-tipo="egreso"]'));
 await esperar(80);
 ok($('#pagoCon').hidden === false, 'al registrar una salida pregunta con qué se pagó');
-const chipsTj = () => $$('#chipsTarjeta .chip').map((c) => c.textContent);
-ok(chipsTj().includes('BBVA'), 'la tarjeta aparece como forma de pago');
-ok(chipsTj()[0] === 'Efectivo o débito', 'y arranca en efectivo');
-tap($$('#chipsTarjeta .chip').find((c) => c.textContent === 'BBVA'));
+const chipsPago = () => $$('#chipsPago .chip').map((c) => c.textContent);
+ok(chipsPago()[0] === 'Efectivo' && chipsPago()[1] === 'Débito', `ofrece efectivo y débito por separado (${chipsPago().join(', ')})`);
+ok(chipsPago().includes('BBVA'), 'y la tarjeta de crédito como tercera opción');
+ok($$('#chipsPago .chip')[0].classList.contains('is-on'), 'arranca en efectivo');
+tap($$('#chipsPago .chip').find((c) => c.textContent === 'BBVA'));
 await esperar(60);
 await capturar(['2', '5', '0', '00'], 'Insumos', 'Guantes');
-ok($$('#chipsTarjeta .chip').find((c) => c.textContent === 'Efectivo o débito').classList.contains('is-on'),
+ok($$('#chipsPago .chip')[0].classList.contains('is-on'),
   'al guardar vuelve a efectivo: la tarjeta no se queda pegada para el siguiente');
 
 // El gasto quedó ligado a la tarjeta, no suelto por ahí.
@@ -408,6 +409,21 @@ await esperar(220);
 const r16 = JSON.parse(ultimoBlob._texto);
 const guantes = r16.movimientos.find((m) => m.nota === 'Guantes');
 ok(!!guantes && guantes.tarjetaId === optBBVA.value, 'el gasto queda ligado a la tarjeta');
+ok(!!guantes && guantes.pago === 'credito', 'y queda marcado como crédito');
+
+// Débito: se registra como tal, pero no cuelga de ninguna tarjeta ni deja deuda.
+await irA('capturar');
+tap($('.seg[data-tipo="egreso"]'));
+await esperar(80);
+tap($$('#chipsPago .chip').find((c) => c.textContent === 'Débito'));
+await esperar(60);
+await capturar(['1', '0', '0', '00'], 'Insumos', 'Gasolina');
+await irA('ajustes');
+tap($('#exportJson'));
+await esperar(220);
+const gas = JSON.parse(ultimoBlob._texto).movimientos.find((m) => m.nota === 'Gasolina');
+ok(!!gas && gas.pago === 'debito', 'un gasto con débito queda marcado como débito');
+ok(!!gas && !gas.tarjetaId, 'y no se cuelga de ninguna tarjeta');
 
 // La fila ya no habla solo de mensualidades: suma todo lo del mes.
 await irA('compromisos');

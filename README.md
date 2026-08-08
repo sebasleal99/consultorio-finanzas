@@ -13,6 +13,7 @@ Una PWA: se instala en la pantalla de inicio y se abre a pantalla completa como 
 - Resumen del mes con desglose por categoría
 - Historial por día
 - Compromisos del mes: nómina e ingresos fijos, gastos fijos, compras a meses y tarjetas, todos en un calendario
+- Al registrar una salida, con qué se pagó: **efectivo, débito o crédito** (cada tarjeta registrada)
 - **Cada tarjeta muestra todo lo suyo junto**: lo que le cargaste este mes, sus compras a meses y lo que le sigues debiendo
 - Respaldo a archivo (las dos secciones en uno), y restauración desde archivo
 - Exportación a CSV que Excel en español abre bien
@@ -37,7 +38,7 @@ La app **no tiene dependencias**. Las de `package.json` son solo para probarla.
 
 ```
 npm install
-npm test           # 118 comprobaciones del flujo completo, con DOM e IndexedDB falsos
+npm test           # 122 comprobaciones del flujo completo, con DOM e IndexedDB falsos
 npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 ```
 

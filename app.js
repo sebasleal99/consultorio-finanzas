@@ -35,6 +35,15 @@ const CATS_DEFAULT = {
 const COMP_VACIO = () => ({ ingresos: [], fijos: [], msi: [], tarjetas: [] });
 const RAMAS_COMP = ['ingresos', 'fijos', 'msi', 'tarjetas'];
 
+/* Con qué se pagó una salida. Efectivo y débito no llevan tarjeta; crédito
+ * siempre va ligado a una de las tarjetas registradas. */
+const FORMAS_SUELTAS = ['efectivo', 'debito'];
+const NOMBRE_FORMA = { efectivo: 'Efectivo', debito: 'Débito', credito: 'Crédito' };
+
+/** Lo capturado antes de que existiera la distinción no trae forma: si iba a
+ *  una tarjeta era crédito, y si no, efectivo. */
+const formaPago = (m) => m.pago || (m.tarjetaId ? 'credito' : 'efectivo');
+
 const MXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
 const NUM = new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -198,7 +207,7 @@ const estado = {
   comp: { consultorio: COMP_VACIO(), personal: COMP_VACIO() },
   movs: [],
   mes: { y: new Date().getFullYear(), m: new Date().getMonth() },
-  tarjetaSel: null,   // con qué se está pagando la salida que se captura
+  pagoSel: 'efectivo', // con qué se está pagando la salida que se captura
   tarjetaVista: null, // qué tarjeta se está viendo en su pantalla de detalle
   tumbas: {},         // id -> cuándo se borró. Ver "Juntar dos aparatos".
 };
@@ -420,28 +429,35 @@ function pintarMonto() {
 
 /** Solo al registrar una salida: con qué se pagó. Si va a una tarjeta,
  *  el gasto queda ligado a ella y aparece en su apartado. */
-function pintarChipsTarjeta() {
+function pintarChipsPago() {
   const caja = $('#pagoCon');
-  const cont = $('#chipsTarjeta');
+  const cont = $('#chipsPago');
   if (!caja || !cont) return;
-  const tarjetas = compAmbito().tarjetas || [];
-  const mostrar = estado.tipo === 'egreso' && tarjetas.length > 0;
+  // Efectivo y débito valen aunque no haya ninguna tarjeta registrada, así
+  // que la pregunta aparece siempre que se registre una salida.
+  const mostrar = estado.tipo === 'egreso';
   caja.hidden = !mostrar;
-  if (!mostrar) { estado.tarjetaSel = null; return; }
+  if (!mostrar) { estado.pagoSel = 'efectivo'; return; }
 
-  if (estado.tarjetaSel && !tarjetas.some((t) => t.id === estado.tarjetaSel)) estado.tarjetaSel = null;
+  const tarjetas = compAmbito().tarjetas || [];
+  // Si la tarjeta elegida ya no existe —la borraste, o cambiaste de
+  // sección— se vuelve a efectivo en vez de quedar en la nada.
+  if (!FORMAS_SUELTAS.includes(estado.pagoSel) && !tarjetas.some((t) => t.id === estado.pagoSel)) {
+    estado.pagoSel = 'efectivo';
+  }
 
   cont.innerHTML = '';
-  const opciones = [{ id: null, nombre: 'Efectivo o débito' }].concat(tarjetas);
+  const opciones = FORMAS_SUELTAS.map((f) => ({ id: f, nombre: NOMBRE_FORMA[f] }))
+    .concat(tarjetas.map((t) => ({ id: t.id, nombre: t.nombre, credito: true })));
   for (const o of opciones) {
     const b = document.createElement('button');
     b.type = 'button';
-    const on = estado.tarjetaSel === o.id;
-    b.className = 'chip' + (o.id ? ' tarjeta' : '') + (on ? ' is-on' : '');
-    b.textContent = o.id ? o.nombre : o.nombre;
+    const on = estado.pagoSel === o.id;
+    b.className = 'chip' + (o.credito ? ' credito' : '') + (on ? ' is-on' : '');
+    b.textContent = o.nombre;
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(on));
-    b.addEventListener('click', () => { estado.tarjetaSel = o.id; pintarChipsTarjeta(); });
+    b.addEventListener('click', () => { estado.pagoSel = o.id; pintarChipsPago(); });
     cont.appendChild(b);
   }
 }
@@ -473,7 +489,7 @@ function setTipo(t) {
     b.setAttribute('aria-checked', String(on));
   });
   pintarChips();
-  pintarChipsTarjeta();
+  pintarChipsPago();
   pintarMonto();
   pintarCategorias();
 }
@@ -511,18 +527,22 @@ async function guardar() {
     creado: Date.now(),
     actualizado: Date.now(),
   };
-  // Solo las salidas se pagan con algo. Un ingreso nunca lleva tarjeta.
-  const tj = estado.tipo === 'egreso' && estado.tarjetaSel ? tarjetaPorId(estado.tarjetaSel) : null;
-  if (tj) m.tarjetaId = tj.id;
+  // Solo las salidas se pagan con algo. Un ingreso nunca lleva forma de pago.
+  const tj = estado.tipo === 'egreso' ? tarjetaPorId(estado.pagoSel) : null;
+  if (estado.tipo === 'egreso') {
+    m.pago = tj ? 'credito' : estado.pagoSel;
+    if (tj) m.tarjetaId = tj.id;
+  }
   await guardarMov(m);
   estado.movs.push(m);
-  toast(`${m.tipo === 'ingreso' ? 'Entró' : 'Salió'} ${money(m.centavos)} · ${m.categoria}${tj ? ' · ' + tj.nombre : ''} · ${NOMBRE_AMBITO[m.ambito]}`);
+  const comoPago = tj ? tj.nombre : (m.pago ? NOMBRE_FORMA[m.pago] : '');
+  toast(`${m.tipo === 'ingreso' ? 'Entró' : 'Salió'} ${money(m.centavos)} · ${m.categoria}${comoPago ? ' · ' + comoPago : ''} · ${NOMBRE_AMBITO[m.ambito]}`);
   estado.centavos = 0;
   $('#notaInput').value = '';
   // Vuelve a efectivo a propósito: si se quedara pegada la tarjeta, el
   // siguiente gasto se le cargaría sin que nadie lo pidiera.
-  estado.tarjetaSel = null;
-  pintarChipsTarjeta();
+  estado.pagoSel = 'efectivo';
+  pintarChipsPago();
   setFecha(hoyISO());
   pintarMonto();
   pintarSalud();
@@ -1817,13 +1837,13 @@ function exportarCsv() {
     const t = c && (c.tarjetas || []).find((x) => x.id === m.tarjetaId);
     return t ? t.nombre : '';
   };
-  const filas = [['seccion', 'fecha', 'tipo', 'categoria', 'monto', 'nota', 'origen', 'tarjeta'].join(';')];
+  const filas = [['seccion', 'fecha', 'tipo', 'categoria', 'monto', 'nota', 'origen', 'pago', 'tarjeta'].join(';')];
   const orden = [...estado.movs].sort((a, b) => (a.ambito === b.ambito ? a.fecha.localeCompare(b.fecha) : a.ambito.localeCompare(b.ambito)));
   for (const m of orden) {
     filas.push([
       NOMBRE_AMBITO[m.ambito] || m.ambito, m.fecha, m.tipo, esc(m.categoria),
       (m.centavos / 100).toFixed(2), esc(m.nota), m.origen ? m.origen.tipo : '',
-      esc(nombreTarjeta(m)),
+      m.tipo === 'egreso' ? NOMBRE_FORMA[formaPago(m)] : '', esc(nombreTarjeta(m)),
     ].join(';'));
   }
   descargar(`finanzas-${hoyISO()}.csv`, '﻿' + filas.join('\r\n'), 'text/csv;charset=utf-8');

@@ -885,7 +885,8 @@ figcaption { font-size: 0.82rem; color: var(--rail); line-height: 1.4; }
 .pagocon { display: grid; gap: 0.1rem; }
 .pagocon[hidden] { display: none; }
 
-.chip.tarjeta.is-on { background: var(--out); border-color: var(--out); color: #fff; }
+/* Crédito se marca distinto: es lo único que deja deuda. */
+.chip.credito.is-on { background: var(--out); border-color: var(--out); color: #fff; }
 
 .volver {
   background: none;
