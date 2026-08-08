@@ -167,6 +167,8 @@ const estado = {
   comp: { consultorio: COMP_VACIO(), personal: COMP_VACIO() },
   movs: [],
   mes: { y: new Date().getFullYear(), m: new Date().getMonth() },
+  tarjetaSel: null,   // con qué se está pagando la salida que se captura
+  tarjetaVista: null, // qué tarjeta se está viendo en su pantalla de detalle
 };
 
 const $ = (s) => document.querySelector(s);
@@ -281,6 +283,35 @@ function cargaTarjeta(tid, periodo) {
     if (!pagoRegistrado('msi', m.id, periodo)) pendiente += c;
   }
   return { total, pendiente };
+}
+
+/** Los gastos sueltos cargados a una tarjeta en un mes, del más reciente al
+ *  más viejo. Son los que capturaste eligiéndola en "¿con qué lo pagaste?".
+ *
+ *  Deja fuera los que nacieron de un compromiso: esos ya se cuentan como
+ *  mensualidad o gasto fijo, y sumarlos aquí los contaría dos veces. */
+function movsTarjeta(tid, periodo) {
+  return movsAmbito()
+    .filter((m) => m.tarjetaId === tid && m.tipo === 'egreso' && !m.origen
+      && (!periodo || m.fecha.startsWith(periodo)))
+    .sort((a, b) => (a.fecha === b.fecha ? b.creado - a.creado : b.fecha.localeCompare(a.fecha)));
+}
+
+/** Todo lo de una tarjeta en un mes, junto: las mensualidades que le tocan y
+ *  los gastos sueltos que le cargaste. Eso es lo que va a llegar en el estado
+ *  de cuenta, que es la pregunta que uno de verdad se hace. */
+function resumenTarjeta(tid, periodo) {
+  const cuotas = cargaTarjeta(tid, periodo);
+  const movs = movsTarjeta(tid, periodo);
+  const sueltos = movs.reduce((a, m) => a + m.centavos, 0);
+  return {
+    cuotas: cuotas.total,
+    cuotasPendientes: cuotas.pendiente,
+    sueltos,
+    movs,
+    total: cuotas.total + sueltos,
+    deuda: deudaTarjeta(tid),
+  };
 }
 
 /** El día en que se paga una mensualidad: el del pago de su tarjeta, o el
@@ -447,11 +478,18 @@ async function guardar() {
     nota: $('#notaInput').value.trim(),
     creado: Date.now(),
   };
+  // Solo las salidas se pagan con algo. Un ingreso nunca lleva tarjeta.
+  const tj = estado.tipo === 'egreso' && estado.tarjetaSel ? tarjetaPorId(estado.tarjetaSel) : null;
+  if (tj) m.tarjetaId = tj.id;
   await guardarMov(m);
   estado.movs.push(m);
-  toast(`${m.tipo === 'ingreso' ? 'Entró' : 'Salió'} ${money(m.centavos)} · ${m.categoria} · ${NOMBRE_AMBITO[m.ambito]}`);
+  toast(`${m.tipo === 'ingreso' ? 'Entró' : 'Salió'} ${money(m.centavos)} · ${m.categoria}${tj ? ' · ' + tj.nombre : ''} · ${NOMBRE_AMBITO[m.ambito]}`);
   estado.centavos = 0;
   $('#notaInput').value = '';
+  // Vuelve a efectivo a propósito: si se quedara pegada la tarjeta, el
+  // siguiente gasto se le cargaría sin que nadie lo pidiera.
+  estado.tarjetaSel = null;
+  pintarChipsTarjeta();
   setFecha(hoyISO());
   pintarMonto();
   pintarSalud();
@@ -1210,9 +1248,13 @@ function pintarCompromisos() {
       row.className = 'comprow' + (urge ? ' urge' : '');
       const main = document.createElement('div');
       main.className = 'cr-main';
-      const tt = document.createElement('div');
-      tt.className = 'cr-t';
+      // El nombre entra a la pantalla de la tarjeta: ahí está todo lo suyo junto.
+      const tt = document.createElement('button');
+      tt.type = 'button';
+      tt.className = 'cr-t enlace';
       tt.textContent = t.nombre;
+      tt.setAttribute('aria-label', `Ver todo lo de ${t.nombre}`);
+      tt.addEventListener('click', () => abrirTarjeta(t.id));
       const ss = document.createElement('div');
       ss.className = 'cr-s' + (urge ? ' urge' : '');
       const corte = t.diaCorte ? `Corte ${textoDiaMes(t.diaCorte, periodo)} · ` : '';
@@ -1223,18 +1265,16 @@ function pintarCompromisos() {
 
       // Lo que esta tarjeta trae de mensualidades: se mueve solo conforme
       // registras cada cuota. Ese es el amarre entre las dos listas.
-      const carga = cargaTarjeta(t.id, periodo);
-      const deuda = deudaTarjeta(t.id);
-      if (carga.total > 0 || deuda > 0) {
+      const r = resumenTarjeta(t.id, periodo);
+      if (r.total > 0 || r.deuda > 0) {
         const extra = document.createElement('div');
         extra.className = 'cr-s';
         const trozos = [];
-        if (carga.total > 0) {
-          trozos.push(carga.pendiente > 0
-            ? `${money(carga.pendiente)} en mensualidades este mes`
-            : `mensualidades del mes ya pagadas (${money(carga.total)})`);
+        if (r.total > 0) trozos.push(`${money(r.total)} este mes`);
+        if (r.cuotas > 0 && r.sueltos > 0) {
+          trozos.push(`${money(r.sueltos)} en gastos · ${money(r.cuotas)} en mensualidades`);
         }
-        if (deuda > 0) trozos.push(`debes ${money(deuda)} a meses`);
+        if (r.deuda > 0) trozos.push(`debes ${money(r.deuda)} a meses`);
         extra.textContent = trozos.join(' · ');
         main.appendChild(extra);
       }
@@ -1267,6 +1307,106 @@ function pintarCompromisos() {
   pintarCalendario(periodo);
   pintarSelectTarjetas();
   pintarNotifBox();
+  pintarTarjeta();
+}
+
+/* ── Pintado: detalle de una tarjeta ────────────────── */
+
+function abrirTarjeta(id) {
+  estado.tarjetaVista = id;
+  ir('tarjeta');
+}
+
+/** La pantalla de una tarjeta: todo lo suyo junto. Lo que le cargaste este
+ *  mes — gastos sueltos y mensualidades — y lo que le sigues debiendo a
+ *  meses. La pregunta que contesta es "¿cuánto me va a llegar?".
+ *
+ *  No pinta si no está a la vista, así se puede llamar desde cualquier lado
+ *  que cambie los datos sin preguntar antes en qué pantalla estamos. */
+function pintarTarjeta() {
+  const scr = $('#screen-tarjeta');
+  if (!scr || scr.hidden) return;
+
+  const t = tarjetaPorId(estado.tarjetaVista);
+  // Pudo borrarse, o cambiamos de sección y aquí no existe: no hay qué ver.
+  if (!t) { estado.tarjetaVista = null; ir('compromisos'); return; }
+
+  const periodo = periodoVista();
+  const r = resumenTarjeta(t.id, periodo);
+
+  $('#tjNombre').textContent = t.nombre;
+
+  // La cuenta regresiva solo tiene sentido en el mes en curso: en un mes
+  // pasado "faltan 3 días" sería mentira.
+  const corte = t.diaCorte ? `Corte ${textoDiaMes(t.diaCorte, periodo)}` : '';
+  const partes = [];
+  if (corte) partes.push(corte);
+  if (periodo === periodoHoy()) {
+    const d = diasParaDia(t.diaPago);
+    partes.push(d === 0
+      ? `se paga HOY (${textoDiaMes(t.diaPago, periodo)})`
+      : `paga ${textoDiaMes(t.diaPago, periodo)} · faltan ${d} día${d === 1 ? '' : 's'}`);
+  } else {
+    partes.push(`paga ${textoDiaMes(t.diaPago, periodo)}`);
+  }
+  partes.push(nombrePeriodo(periodo));
+  $('#tjFechas').textContent = partes.join(' · ');
+
+  $('#tjMes').textContent = money(r.total);
+  $('#tjDeuda').textContent = money(r.deuda);
+
+  // Compras a meses cargadas a esta tarjeta, con su botón de pagar.
+  const lm = $('#tjMsi');
+  lm.innerHTML = '';
+  const suyas = (compAmbito().msi || []).filter((m) => m.tarjetaId === t.id);
+  if (suyas.length === 0) {
+    lm.innerHTML = '<p class="note">Ninguna compra a meses en esta tarjeta.</p>';
+  } else {
+    for (const m of suyas) {
+      const i = indiceCuota(m, periodo);
+      const fila = i !== null
+        ? { tipo: 'msi', ref: m, nombre: m.nombre, centavos: cuotaMsi(m, i), dia: diaDeCuota(m), pagado: !!pagoRegistrado('msi', m.id, periodo), cuota: i + 1, de: m.meses }
+        : { tipo: 'msi', ref: m, nombre: m.nombre, centavos: cuotaMsi(m, 0), dia: diaDeCuota(m), pagado: true, cuota: cuotasPagadas(m), de: m.meses };
+      const row = filaCompromiso(fila, periodo);
+      if (i === null) {
+        const term = sumaMeses(m.inicio, m.meses - 1);
+        row.querySelector('.cr-s').textContent = mesesEntre(periodo, m.inicio) > 0
+          ? `Empieza en ${nombrePeriodo(m.inicio)}`
+          : `Terminó en ${nombrePeriodo(term)}`;
+        row.querySelector('.cr-acts').innerHTML = '';
+      }
+      lm.appendChild(row);
+    }
+  }
+
+  // Gastos sueltos que le cargaste este mes.
+  const lv = $('#tjMovs');
+  lv.innerHTML = '';
+  if (r.movs.length === 0) {
+    lv.innerHTML = `<p class="empty">Nada cargado a esta tarjeta en ${nombrePeriodo(periodo)}.<br>Al capturar una salida, elígela en "¿con qué lo pagaste?".</p>`;
+    return;
+  }
+  for (const m of r.movs) {
+    const row = document.createElement('div');
+    row.className = 'row out';
+
+    const main = document.createElement('div');
+    main.className = 'row-main';
+    const cat = document.createElement('div');
+    cat.className = 'row-cat';
+    cat.textContent = m.categoria;
+    const sub = document.createElement('div');
+    sub.className = 'row-nota';
+    sub.textContent = m.nota ? `${etiquetaFecha(m.fecha)} · ${m.nota}` : etiquetaFecha(m.fecha);
+    main.append(cat, sub);
+
+    const amt = document.createElement('div');
+    amt.className = 'row-amt';
+    amt.textContent = '−' + money(m.centavos).replace('$', '$ ');
+
+    row.append(main, amt);
+    lv.appendChild(row);
+  }
 }
 
 /** El selector de tarjeta del formulario de compras a meses. */
@@ -1626,12 +1766,21 @@ function exportarCsv() {
     const s = String(v ?? '');
     return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  const filas = [['seccion', 'fecha', 'tipo', 'categoria', 'monto', 'nota', 'origen'].join(';')];
+  // La tarjeta se busca en la sección del propio movimiento, no en la que
+  // estés viendo: el CSV lleva las dos y cada una tiene sus tarjetas.
+  const nombreTarjeta = (m) => {
+    if (!m.tarjetaId) return '';
+    const c = estado.comp[m.ambito];
+    const t = c && (c.tarjetas || []).find((x) => x.id === m.tarjetaId);
+    return t ? t.nombre : '';
+  };
+  const filas = [['seccion', 'fecha', 'tipo', 'categoria', 'monto', 'nota', 'origen', 'tarjeta'].join(';')];
   const orden = [...estado.movs].sort((a, b) => (a.ambito === b.ambito ? a.fecha.localeCompare(b.fecha) : a.ambito.localeCompare(b.ambito)));
   for (const m of orden) {
     filas.push([
       NOMBRE_AMBITO[m.ambito] || m.ambito, m.fecha, m.tipo, esc(m.categoria),
       (m.centavos / 100).toFixed(2), esc(m.nota), m.origen ? m.origen.tipo : '',
+      esc(nombreTarjeta(m)),
     ].join(';'));
   }
   descargar(`finanzas-${hoyISO()}.csv`, '﻿' + filas.join('\r\n'), 'text/csv;charset=utf-8');
@@ -1735,14 +1884,18 @@ async function setAmbito(a, persistir = true) {
 
 function ir(nombre) {
   $$('.screen').forEach((s) => { s.hidden = s.dataset.screen !== nombre; });
+  // El detalle de una tarjeta cuelga de Compromisos: la pestaña se queda
+  // encendida ahí para no perder de dónde vienes.
+  const pestana = nombre === 'tarjeta' ? 'compromisos' : nombre;
   $$('.tab').forEach((t) => {
-    const on = t.dataset.go === nombre;
+    const on = t.dataset.go === pestana;
     t.classList.toggle('is-on', on);
     t.setAttribute('aria-selected', String(on));
   });
   window.scrollTo(0, 0);
   if (nombre === 'salud') pintarSalud();
   if (nombre === 'historial') pintarHistorial();
+  if (nombre === 'tarjeta') pintarTarjeta();
   if (nombre === 'compromisos') pintarCompromisos();
   if (nombre === 'ajustes') { pintarCategorias(); pintarRespaldoNota(); pintarBarraBox(); }
 }
@@ -1801,6 +1954,7 @@ async function init() {
 
   // Navegación y mes
   $$('.tab').forEach((t) => t.addEventListener('click', () => ir(t.dataset.go)));
+  $('#tjVolver').addEventListener('click', () => ir('compromisos'));
   $('#mesPrev').addEventListener('click', () => moverMes(-1));
   $('#mesNext').addEventListener('click', () => moverMes(1));
 

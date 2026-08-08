@@ -12,6 +12,8 @@ Una PWA: se instala en la pantalla de inicio y se abre a pantalla completa como 
 - Capturar toma tres toques: monto, tipo, categoría
 - Resumen del mes con desglose por categoría
 - Historial por día
+- Compromisos del mes: nómina e ingresos fijos, gastos fijos, compras a meses y tarjetas, todos en un calendario
+- **Cada tarjeta muestra todo lo suyo junto**: lo que le cargaste este mes, sus compras a meses y lo que le sigues debiendo
 - Respaldo a archivo (las dos secciones en uno), y restauración desde archivo
 - Exportación a CSV que Excel en español abre bien
 
@@ -35,7 +37,7 @@ La app **no tiene dependencias**. Las de `package.json` son solo para probarla.
 
 ```
 npm install
-npm test           # 38 comprobaciones del flujo completo, con DOM e IndexedDB falsos
+npm test           # 107 comprobaciones del flujo completo, con DOM e IndexedDB falsos
 npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 ```
 
@@ -48,6 +50,10 @@ npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 **Las fechas usan el día local, nunca `toISOString()`.** En México eso adelanta el día por la tarde y el movimiento quedaría con la fecha equivocada.
 
 **El service worker no puede tumbar la app.** Si el modo sin conexión falla, la app abre igual.
+
+**Un gasto de tarjeta se cuenta una sola vez.** Los pagos que nacen de un compromiso (una mensualidad, un gasto fijo) ya se cuentan como tales; en la pantalla de la tarjeta solo se suman aparte los gastos sueltos que capturaste eligiéndola. Por eso la lista de gastos deja fuera todo lo que trae `origen`.
+
+**La forma de pago no se queda pegada.** Al guardar, la app vuelve sola a *Efectivo o débito*: si se quedara la tarjeta seleccionada, el siguiente gasto se le cargaría sin que nadie lo pidiera.
 
 ## Estructura
 

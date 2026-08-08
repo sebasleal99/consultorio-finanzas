@@ -372,6 +372,72 @@ ok(w2.document.querySelector('.seg-out').classList.contains('is-on'), 'abrir con
 ok(w2.document.querySelector('#screen-capturar').hidden === false, 'y aterriza en la pantalla de capturar');
 ok(!w2.location.search.includes('t='), 'el parámetro se limpia de la barra de direcciones');
 
+/* ── 16. Todo lo de una tarjeta, junto ──────────────── */
+
+console.log('\n16. Todo lo de una tarjeta');
+
+// Una compra a meses cargada a la BBVA: 6,000 a 12 = 500 al mes.
+await irA('compromisos');
+escribir('#msiNombre', 'Laptop');
+escribir('#msiTotal', '6000');
+escribir('#msiMeses', '12');
+const optBBVA = Array.from($('#msiTarjeta').options).find((o) => o.textContent === 'BBVA');
+ok(!!optBBVA, 'se puede elegir la tarjeta al crear una compra a meses');
+$('#msiTarjeta').value = optBBVA.value;
+enviar('#formMsi');
+await esperar(250);
+
+// Y un gasto suelto pagado con esa misma tarjeta: 250.
+await irA('capturar');
+tap($('.seg[data-tipo="egreso"]'));
+await esperar(80);
+ok($('#pagoCon').hidden === false, 'al registrar una salida pregunta con qué se pagó');
+const chipsTj = () => $$('#chipsTarjeta .chip').map((c) => c.textContent);
+ok(chipsTj().includes('BBVA'), 'la tarjeta aparece como forma de pago');
+ok(chipsTj()[0] === 'Efectivo o débito', 'y arranca en efectivo');
+tap($$('#chipsTarjeta .chip').find((c) => c.textContent === 'BBVA'));
+await esperar(60);
+await capturar(['2', '5', '0', '00'], 'Insumos', 'Guantes');
+ok($$('#chipsTarjeta .chip').find((c) => c.textContent === 'Efectivo o débito').classList.contains('is-on'),
+  'al guardar vuelve a efectivo: la tarjeta no se queda pegada para el siguiente');
+
+// El gasto quedó ligado a la tarjeta, no suelto por ahí.
+await irA('ajustes');
+tap($('#exportJson'));
+await esperar(220);
+const r16 = JSON.parse(ultimoBlob._texto);
+const guantes = r16.movimientos.find((m) => m.nota === 'Guantes');
+ok(!!guantes && guantes.tarjetaId === optBBVA.value, 'el gasto queda ligado a la tarjeta');
+
+// La fila ya no habla solo de mensualidades: suma todo lo del mes.
+await irA('compromisos');
+const filaBBVA = $$('#listaTarjetas .comprow').find((r) => r.textContent.includes('BBVA'));
+ok(!!filaBBVA, 'la tarjeta sigue en la lista');
+ok(filaBBVA.textContent.includes('$750.00'), `la fila suma gasto y mensualidad: 250 + 500 (${filaBBVA.querySelector('.cr-s + .cr-s')?.textContent})`);
+
+// Su pantalla: todo lo suyo junto.
+tap(filaBBVA.querySelector('.cr-t.enlace'));
+await esperar(150);
+ok($('#screen-tarjeta').hidden === false, 'el nombre abre la pantalla de la tarjeta');
+ok($('#tjNombre').textContent === 'BBVA', 'con el nombre de la tarjeta');
+ok(soloNum($('#tjMes').textContent) === '750.00', `cargado este mes 750.00 (dio ${$('#tjMes').textContent})`);
+ok(soloNum($('#tjDeuda').textContent) === '6000.00', `debes 6,000.00 a meses (dio ${$('#tjDeuda').textContent})`);
+ok($('#tjMsi').textContent.includes('Laptop'), 'lista su compra a meses');
+ok(!$('#tjMsi').textContent.includes('Autoclave'), 'y no las que no son suyas');
+ok($('#tjMovs').textContent.includes('Guantes'), 'lista el gasto suelto que le cargaste');
+ok($('#tjMovs').textContent.includes('Insumos'), 'con su categoría');
+ok($('.tab[data-go="compromisos"]').classList.contains('is-on'), 'la pestaña de Compromisos se queda encendida');
+
+// Pagar la mensualidad desde aquí no la cuenta dos veces.
+tap($('#tjMsi').querySelector('.btn-pagar'));
+await esperar(250);
+ok(soloNum($('#tjMes').textContent) === '750.00', `pagarla no infla lo cargado del mes (dio ${$('#tjMes').textContent})`);
+ok(soloNum($('#tjDeuda').textContent) === '5500.00', `y la deuda baja a 5,500 (dio ${$('#tjDeuda').textContent})`);
+
+tap($('#tjVolver'));
+await esperar(120);
+ok($('#screen-compromisos').hidden === false, 'el botón de volver regresa a Compromisos');
+
 /* ── Resultado ──────────────────────────────────────── */
 
 console.log(`\n${'─'.repeat(58)}`);
