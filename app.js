@@ -155,6 +155,37 @@ async function leerCfg(k, fallback) {
 
 const escribirCfg = (k, v) => tx('cfg', 'readwrite', (s) => s.put({ k, v }));
 
+/* ── Juntar dos aparatos ────────────────────────────── */
+/* Para que el celular y la computadora puedan juntar sus datos sin que se
+ * pierda nada, cada cosa guarda CUÁNDO se tocó por última vez, y lo borrado
+ * deja una marca.
+ *
+ * Sin el sello no se sabe cuál de dos versiones es la buena. Sin la marca,
+ * lo que borras aquí revive en cuanto juntas con el otro aparato: el otro
+ * todavía lo trae y no tiene forma de saber que su ausencia fue a propósito.
+ */
+
+/** Cuándo se tocó por última vez. Lo capturado antes de esto no trae sello:
+ *  se le toma el de creación, y si tampoco hay, cero — cualquier cambio le gana. */
+const sello = (x) => (x && (x.actualizado || x.creado)) || 0;
+
+/** Marca algo como tocado ahora. Esto es lo que decide quién gana al juntar:
+ *  el sello más reciente, no el que llegó al último. */
+function tocar(x) {
+  x.actualizado = Date.now();
+  return x;
+}
+
+/** ¿Esto se borró después de su último cambio? Si lo editaste en un aparato
+ *  DESPUÉS de borrarlo en el otro, el cambio gana y no se borra. */
+const enterrado = (x) => x && (estado.tumbas[x.id] || 0) > sello(x);
+
+/** Deja la marca de que esto se borró, y cuándo. */
+function enterrar(id) {
+  estado.tumbas[id] = Date.now();
+  return escribirCfg('tumbas', estado.tumbas);
+}
+
 /* ── Estado ─────────────────────────────────────────── */
 
 const estado = {
@@ -169,6 +200,7 @@ const estado = {
   mes: { y: new Date().getFullYear(), m: new Date().getMonth() },
   tarjetaSel: null,   // con qué se está pagando la salida que se captura
   tarjetaVista: null, // qué tarjeta se está viendo en su pantalla de detalle
+  tumbas: {},         // id -> cuándo se borró. Ver "Juntar dos aparatos".
 };
 
 const $ = (s) => document.querySelector(s);
@@ -477,6 +509,7 @@ async function guardar() {
     fecha: estado.fecha,
     nota: $('#notaInput').value.trim(),
     creado: Date.now(),
+    actualizado: Date.now(),
   };
   // Solo las salidas se pagan con algo. Un ingreso nunca lleva tarjeta.
   const tj = estado.tipo === 'egreso' && estado.tarjetaSel ? tarjetaPorId(estado.tarjetaSel) : null;
@@ -817,6 +850,7 @@ async function marcarPagado(fila, periodo) {
     nota: fila.tipo === 'msi' ? `${fila.nombre} · cuota ${fila.cuota} de ${fila.de}` : fila.nombre,
     origen: { tipo: fila.tipo, id: fila.ref.id, periodo },
     creado: Date.now(),
+    actualizado: Date.now(),
   };
   await guardarMov(mov);
   estado.movs.push(mov);
@@ -886,6 +920,7 @@ function abrirEdicion(row, item, campos, onGuardar) {
       }
     }
     Object.assign(item, pend);
+    tocar(item);   // para que este cambio le gane al del otro aparato
     await onGuardar();
     toast('Actualizado. Lo ya registrado no se tocó.');
   });
@@ -911,6 +946,7 @@ const CAMPOS_TARJETA = [
 
 async function deshacerPago(mov) {
   await borrarMov(mov.id);
+  await enterrar(mov.id);
   estado.movs = estado.movs.filter((x) => x.id !== mov.id);
   toast('Pago deshecho');
   pintarCompromisos();
@@ -1153,6 +1189,7 @@ function pintarCompromisos() {
       del.setAttribute('aria-label', `Quitar ${f.nombre}`);
       del.addEventListener('click', async () => {
         if (!confirm(`¿Quitar "${f.nombre}"? Los cobros ya registrados se quedan en el historial.`)) return;
+        await enterrar(f.ref.id);
         c.ingresos = c.ingresos.filter((x) => x.id !== f.ref.id);
         estado.comp[estado.ambito] = c;
         await guardarComp();
@@ -1185,6 +1222,7 @@ function pintarCompromisos() {
       del.setAttribute('aria-label', `Quitar el gasto fijo ${f.nombre}`);
       del.addEventListener('click', async () => {
         if (!confirm(`¿Quitar "${f.nombre}" de los gastos fijos? Los pagos ya registrados se quedan en el historial.`)) return;
+        await enterrar(f.ref.id);
         c.fijos = c.fijos.filter((x) => x.id !== f.ref.id);
         estado.comp[estado.ambito] = c;
         await guardarComp();
@@ -1224,6 +1262,7 @@ function pintarCompromisos() {
       del.setAttribute('aria-label', `Quitar la compra ${m.nombre}`);
       del.addEventListener('click', async () => {
         if (!confirm(`¿Quitar "${m.nombre}"? Los pagos ya registrados se quedan en el historial.`)) return;
+        await enterrar(m.id);
         c.msi = c.msi.filter((x) => x.id !== m.id);
         estado.comp[estado.ambito] = c;
         await guardarComp();
@@ -1292,6 +1331,7 @@ function pintarCompromisos() {
       del.setAttribute('aria-label', `Quitar la tarjeta ${t.nombre}`);
       del.addEventListener('click', async () => {
         if (!confirm(`¿Quitar la tarjeta "${t.nombre}"?`)) return;
+        await enterrar(t.id);
         c.tarjetas = c.tarjetas.filter((x) => x.id !== t.id);
         estado.comp[estado.ambito] = c;
         await guardarComp();
@@ -1689,6 +1729,7 @@ function pintarHistorial() {
     del.addEventListener('click', async () => {
       if (!confirm(`¿Borrar ${m.categoria} de ${money(m.centavos)}?`)) return;
       await borrarMov(m.id);
+      await enterrar(m.id);
       estado.movs = estado.movs.filter((x) => x.id !== m.id);
       pintarHistorial();
       pintarSalud();
@@ -1749,11 +1790,13 @@ function descargar(nombre, contenido, mime) {
 async function exportarJson() {
   const payload = {
     formato: 'consultorio-finanzas',
-    version: 3,
+    version: 4,
     exportado: new Date().toISOString(),
     categorias: estado.cats,
     compromisos: estado.comp,
     movimientos: estado.movs,
+    // Sin esto, restaurar en otro aparato revive lo que ya habías borrado.
+    tumbas: estado.tumbas,
   };
   descargar(`finanzas-${hoyISO()}.json`, JSON.stringify(payload, null, 2), 'application/json');
   await escribirCfg('ultimoRespaldo', Date.now());
@@ -1787,6 +1830,68 @@ function exportarCsv() {
   toast('CSV exportado, las dos secciones');
 }
 
+/** Junta lo que viene de otro aparato con lo de aquí. Tres reglas:
+ *
+ *  - lo que no tengo, se suma
+ *  - de lo repetido gana el sello más reciente, venga de donde venga
+ *  - lo enterrado no revive, y lo que allá enterraron se va de aquí
+ *
+ *  Nunca borra algo solo porque el otro lado no lo traiga: la ausencia no
+ *  prueba nada, solo la marca de borrado lo hace. Por eso un respaldo viejo
+ *  no puede vaciarte la app. */
+async function fusionar(data) {
+  let nuevos = 0;
+  let actualizados = 0;
+  let borrados = 0;
+
+  // Las marcas de borrado primero, para que ya estén al decidir lo demás.
+  for (const [id, ts] of Object.entries(data.tumbas || {})) {
+    if ((estado.tumbas[id] || 0) < ts) estado.tumbas[id] = ts;
+  }
+
+  for (const m of data.movimientos || []) {
+    if (!m || typeof m.centavos !== 'number' || !m.fecha || !m.tipo) continue;
+    if (!m.ambito) m.ambito = 'consultorio';
+    const mio = estado.movs.find((x) => x.id === m.id);
+    if (mio) {
+      if (sello(m) > sello(mio)) { Object.assign(mio, m); await guardarMov(mio); actualizados++; }
+    } else if (!enterrado(m)) {
+      await guardarMov(m);
+      estado.movs.push(m);
+      nuevos++;
+    }
+  }
+
+  // Lo que aquí sigue vivo pero allá se borró después de su último cambio.
+  for (const m of [...estado.movs]) {
+    if (!enterrado(m)) continue;
+    await borrarMov(m.id);
+    estado.movs = estado.movs.filter((x) => x.id !== m.id);
+    borrados++;
+  }
+
+  if (data.compromisos) {
+    for (const a of AMBITOS) {
+      const src = data.compromisos[a];
+      if (!src) continue;
+      for (const k of RAMAS_COMP) {
+        const dst = estado.comp[a][k];
+        for (const it of src[k] || []) {
+          if (!it || !it.id) continue;
+          const i = dst.findIndex((x) => x.id === it.id);
+          if (i >= 0) { if (sello(it) > sello(dst[i])) dst[i] = it; }
+          else if (!enterrado(it)) dst.push(it);
+        }
+        estado.comp[a][k] = dst.filter((x) => !enterrado(x));
+      }
+    }
+    await guardarComp();
+  }
+
+  await escribirCfg('tumbas', estado.tumbas);
+  return { nuevos, actualizados, borrados };
+}
+
 async function importar(file) {
   let data;
   try { data = JSON.parse(await file.text()); }
@@ -1796,16 +1901,7 @@ async function importar(file) {
     return;
   }
 
-  const existentes = new Set(estado.movs.map((m) => m.id));
-  let nuevos = 0;
-  for (const m of data.movimientos) {
-    if (!m || typeof m.centavos !== 'number' || !m.fecha || !m.tipo) continue;
-    if (existentes.has(m.id)) continue;
-    if (!m.ambito) m.ambito = 'consultorio';
-    await guardarMov(m);
-    estado.movs.push(m);
-    nuevos++;
-  }
+  const { nuevos } = await fusionar(data);
 
   if (data.categorias) {
     const entra = (data.categorias.consultorio || data.categorias.personal)
@@ -1818,19 +1914,6 @@ async function importar(file) {
       }
     }
     await escribirCfg('cats', estado.cats);
-  }
-
-  // Los compromisos se suman por id, sin duplicar.
-  if (data.compromisos) {
-    for (const a of AMBITOS) {
-      const src = data.compromisos[a];
-      if (!src) continue;
-      for (const k of RAMAS_COMP) {
-        const dst = estado.comp[a][k];
-        for (const it of src[k] || []) if (!dst.some((x) => x.id === it.id)) dst.push(it);
-      }
-    }
-    await guardarComp();
   }
 
   pintarCategorias();
@@ -1906,6 +1989,8 @@ async function init() {
   db = await abrirDB();
   estado.movs = await todosMov();
   await migrar(await leerCfg('cats', null));
+
+  estado.tumbas = await leerCfg('tumbas', {}) || {};
 
   const comp = await leerCfg('compromisos', null);
   estado.comp = { consultorio: COMP_VACIO(), personal: COMP_VACIO() };
@@ -1992,7 +2077,7 @@ async function init() {
     const dia = Math.min(31, Math.max(1, parseInt($('#nomDia').value, 10) || 1));
     if (!nombre) return;
     if (cent <= 0) { toast('Escribe un monto válido'); return; }
-    estado.comp[estado.ambito].ingresos.push({ id: nuevoId(), nombre, centavos: cent, dia });
+    estado.comp[estado.ambito].ingresos.push(tocar({ id: nuevoId(), nombre, centavos: cent, dia }));
     await guardarComp();
     $('#nomNombre').value = ''; $('#nomMonto').value = '';
     const d = e.target.closest('details'); if (d) d.open = false;
@@ -2009,7 +2094,7 @@ async function init() {
     const dia = Math.min(31, Math.max(1, parseInt($('#fijoDia').value, 10) || 1));
     if (!nombre) return;
     if (cent <= 0) { toast('Escribe un monto válido'); return; }
-    estado.comp[estado.ambito].fijos.push({ id: nuevoId(), nombre, centavos: cent, dia });
+    estado.comp[estado.ambito].fijos.push(tocar({ id: nuevoId(), nombre, centavos: cent, dia }));
     await guardarComp();
     $('#fijoNombre').value = ''; $('#fijoMonto').value = '';
     e.target.closest('details').open = false;
@@ -2039,7 +2124,7 @@ async function init() {
     if (total <= 0) { toast('Escribe el monto total'); return; }
     if (meses < 2) { toast('Tienen que ser 2 meses o más'); return; }
     const tarjetaId = $('#msiTarjeta').value || null;
-    estado.comp[estado.ambito].msi.push({ id: nuevoId(), nombre, totalCentavos: total, meses, inicio, tarjetaId });
+    estado.comp[estado.ambito].msi.push(tocar({ id: nuevoId(), nombre, totalCentavos: total, meses, inicio, tarjetaId }));
     await guardarComp();
     $('#msiNombre').value = ''; $('#msiTotal').value = ''; $('#msiPreview').textContent = '';
     e.target.closest('details').open = false;
@@ -2056,7 +2141,7 @@ async function init() {
     const diaPago = Math.min(31, Math.max(1, parseInt($('#tarDiaPago').value, 10) || 1));
     const aviso = parseInt($('#tarAviso').value, 10);
     if (!nombre) return;
-    estado.comp[estado.ambito].tarjetas.push({ id: nuevoId(), nombre, diaCorte, diaPago, aviso });
+    estado.comp[estado.ambito].tarjetas.push(tocar({ id: nuevoId(), nombre, diaCorte, diaPago, aviso }));
     await guardarComp();
     $('#tarNombre').value = '';
     e.target.closest('details').open = false;
@@ -2075,7 +2160,7 @@ async function init() {
     if (cuantos === 0) { toast(`No hay nada en ${nom}`); return; }
     if (!confirm(`Esto borra los ${cuantos} movimientos de ${nom}. La otra sección no se toca.\nNo se puede deshacer.\n\n¿Ya respaldaste?`)) return;
     if (!confirm(`Última confirmación: ¿borrar ${nom}?`)) return;
-    for (const m of movsAmbito()) await borrarMov(m.id);
+    for (const m of movsAmbito()) { await borrarMov(m.id); await enterrar(m.id); }
     estado.movs = estado.movs.filter((m) => m.ambito !== estado.ambito);
     pintarHistorial();
     pintarSalud();

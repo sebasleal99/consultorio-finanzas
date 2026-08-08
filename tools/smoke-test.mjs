@@ -438,6 +438,69 @@ tap($('#tjVolver'));
 await esperar(120);
 ok($('#screen-compromisos').hidden === false, 'el botón de volver regresa a Compromisos');
 
+/* ── 17. Juntar dos aparatos sin perder nada ────────── */
+
+console.log('\n17. Juntar dos aparatos');
+
+const importarTexto = async (txt) => {
+  Object.defineProperty(input, 'files', { value: [{ text: () => Promise.resolve(txt) }], configurable: true });
+  input.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await esperar(420);
+};
+
+tap($('.amb[data-amb="consultorio"]'));
+await esperar(150);
+await irA('ajustes');
+tap($('#exportJson'));
+await esperar(240);
+const copiaVieja = ultimoBlob._texto;
+const r17 = JSON.parse(copiaVieja);
+ok(r17.tumbas !== undefined, 'el respaldo lleva las marcas de lo borrado');
+ok(r17.movimientos.every((m) => m.actualizado), 'y cada movimiento lleva su sello de cuándo se tocó');
+
+// Borrar aquí y restaurar un respaldo viejo que todavía lo trae.
+await irA('historial');
+const filaGuantes = $$('#lista .row').find((r) => r.textContent.includes('Guantes'));
+ok(!!filaGuantes, 'el gasto de Guantes está en el historial');
+tap(filaGuantes.querySelector('.row-del'));
+await esperar(320);
+ok(!$('#lista').textContent.includes('Guantes'), 'se borra');
+
+await importarTexto(copiaVieja);
+await irA('historial');
+ok(!$('#lista').textContent.includes('Guantes'), 'lo borrado NO revive al restaurar un respaldo viejo');
+
+// Un cambio más reciente hecho en el otro aparato debe ganar.
+const otro = JSON.parse(copiaVieja);
+const resina = otro.movimientos.find((m) => m.categoria === 'Resina');
+ok(!!resina, 'hay un movimiento de Resina para probar el cambio');
+resina.centavos = 90000;                  // 900.00 en vez de 850.00
+resina.actualizado = Date.now() + 60000;  // como si se hubiera editado allá después
+await importarTexto(JSON.stringify(otro));
+await irA('historial');
+ok($('#lista').textContent.includes('900.00'), 'el cambio más reciente del otro aparato gana');
+
+// Y al revés: un cambio viejo no pisa lo que aquí es más nuevo.
+const viejo = JSON.parse(copiaVieja);
+const resina2 = viejo.movimientos.find((m) => m.categoria === 'Resina');
+resina2.centavos = 100;
+resina2.actualizado = 1;
+await importarTexto(JSON.stringify(viejo));
+await irA('historial');
+ok($('#lista').textContent.includes('900.00'), 'y un cambio viejo no pisa lo nuevo');
+ok(!$('#lista').textContent.includes('$ 1.00'), 'el monto viejo no se cuela');
+
+// Un respaldo incompleto no puede vaciar la app: la ausencia no prueba nada.
+const incompleto = JSON.parse(copiaVieja);
+incompleto.movimientos = [];
+incompleto.tumbas = {};
+incompleto.compromisos = null;
+await importarTexto(JSON.stringify(incompleto));
+await irA('historial');
+ok($('#lista').textContent.includes('Resina'), 'un respaldo vacío NO borra lo que ya tenías');
+await irA('compromisos');
+ok($('#listaTarjetas').textContent.includes('BBVA'), 'ni se lleva los compromisos');
+
 /* ── Resultado ──────────────────────────────────────── */
 
 console.log(`\n${'─'.repeat(58)}`);

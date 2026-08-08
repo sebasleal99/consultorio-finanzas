@@ -37,7 +37,7 @@ La app **no tiene dependencias**. Las de `package.json` son solo para probarla.
 
 ```
 npm install
-npm test           # 107 comprobaciones del flujo completo, con DOM e IndexedDB falsos
+npm test           # 118 comprobaciones del flujo completo, con DOM e IndexedDB falsos
 npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 ```
 
@@ -52,6 +52,10 @@ npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 **El service worker no puede tumbar la app.** Si el modo sin conexión falla, la app abre igual.
 
 **Un gasto de tarjeta se cuenta una sola vez.** Los pagos que nacen de un compromiso (una mensualidad, un gasto fijo) ya se cuentan como tales; en la pantalla de la tarjeta solo se suman aparte los gastos sueltos que capturaste eligiéndola. Por eso la lista de gastos deja fuera todo lo que trae `origen`.
+
+**Cada dato guarda cuándo se tocó, y lo borrado deja marca.** Es lo que permite juntar dos aparatos sin perder nada: de dos versiones gana el sello más reciente, y lo que borraste no revive al restaurar un respaldo viejo que todavía lo trae.
+
+**La ausencia no borra.** Juntar nunca quita algo solo porque el otro lado no lo traiga — únicamente la marca de borrado lo hace. Por eso un respaldo incompleto no puede vaciarte la app.
 
 **La forma de pago no se queda pegada.** Al guardar, la app vuelve sola a *Efectivo o débito*: si se quedara la tarjeta seleccionada, el siguiente gasto se le cargaría sin que nadie lo pidiera.
 
