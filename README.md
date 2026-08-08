@@ -10,7 +10,7 @@ Una PWA: se instala en la pantalla de inicio y se abre a pantalla completa como 
 
 - **Dos secciones separadas: Consultorio y Personal.** Cada una con sus movimientos, sus categorías y sus totales. No se suman nunca. El acento de color cambia con la sección para que no haya duda de dónde estás anotando
 - Capturar toma dos toques: monto y tipo. **La categoría es opcional** — se anota primero y se clasifica después, o nunca
-- Resumen del mes con desglose por categoría
+- Resumen del mes con desglose por categoría y **por forma de pago**: cuánto salió en efectivo, cuánto en débito y cuánto cargaste a cada tarjeta
 - Historial por día
 - Compromisos del mes: nómina e ingresos fijos, gastos fijos, compras a meses y tarjetas, todos en un calendario
 - Al registrar una salida, con qué se pagó: **efectivo, débito o crédito** (cada tarjeta registrada)
@@ -38,7 +38,7 @@ La app **no tiene dependencias**. Las de `package.json` son solo para probarla.
 
 ```
 npm install
-npm test           # 136 comprobaciones del flujo completo, con DOM e IndexedDB falsos
+npm test           # 144 comprobaciones del flujo completo, con DOM e IndexedDB falsos
 npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 ```
 

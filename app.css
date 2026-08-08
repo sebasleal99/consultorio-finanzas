@@ -897,6 +897,19 @@ figcaption { font-size: 0.82rem; color: var(--rail); line-height: 1.4; }
   font-weight: 600;
 }
 
+/* Nombre de tarjeta pulsable dentro de una barra del desglose. */
+.bar-top .enlace {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
 /* Nombre de tarjeta pulsable para entrar a su detalle. Es un <button>, así
    que hay que quitarle todo lo que el navegador le pone de fábrica. */
 .comprow .cr-t.enlace {

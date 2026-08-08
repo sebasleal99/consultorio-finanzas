@@ -592,6 +592,35 @@ ok(!!sc && sc.centavos === 4000, `con su monto de 40.00 (${sc && sc.centavos})`)
 await irA('salud');
 ok($('#barsIn').textContent.includes('Sin categoría'), 'y entra al desglose del mes como una más');
 
+/* ── 20. Salió, con qué se pagó ─────────────────────── */
+
+console.log('\n20. Salió, con qué se pagó');
+await irA('salud');
+const centavosDe = (s) => Math.round(parseFloat(soloNum(s)) * 100);
+const txtPago = $('#barsPago').textContent;
+
+ok(txtPago.includes('Débito'), 'el desglose separa el débito');
+ok(txtPago.includes('BBVA'), 'y cada tarjeta de crédito por su nombre');
+ok(txtPago.includes('tarjeta de crédito'), 'y dice cuánto del total se fue a crédito');
+
+// La invariante que importa: el desglose no puede perder ni inventar dinero.
+const sumaBarras = $$('#barsPago .bar-top b').reduce((a, b) => a + centavosDe(b.textContent), 0);
+const totalSalio = centavosDe($('#totOut').textContent);
+ok(sumaBarras === totalSalio, `las partes suman exactamente lo que salió (${sumaBarras} = ${totalSalio})`);
+
+// La mensualidad se le acredita a su tarjeta aunque el movimiento no la traiga.
+const filaBBVApago = $$('#barsPago .bar').find((r) => r.textContent.includes('BBVA'));
+ok(!!filaBBVApago && centavosDe(filaBBVApago.querySelector('b').textContent) >= 50000,
+  'la mensualidad de la Laptop se le acredita a la BBVA');
+
+// Y desde aquí se llega a todo lo de esa tarjeta.
+const linkBBVA = $$('#barsPago .enlace').find((b) => b.textContent === 'BBVA');
+ok(!!linkBBVA, 'el nombre de la tarjeta es pulsable');
+tap(linkBBVA);
+await esperar(200);
+ok($('#screen-tarjeta').hidden === false, 'y abre la pantalla de la tarjeta');
+ok($('#tjNombre').textContent === 'BBVA', 'la de esa tarjeta, no otra');
+
 /* ── Resultado ──────────────────────────────────────── */
 
 console.log(`\n${'─'.repeat(58)}`);

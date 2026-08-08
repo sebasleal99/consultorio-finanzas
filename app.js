@@ -603,6 +603,98 @@ function pintarBarras(cont, ms, tipo) {
   }
 }
 
+/** Los egresos del mes partidos por cómo se pagaron. El total solo dice
+ *  cuánto salió; esto dice por dónde — que es lo único que deja ver cuánto
+ *  se está yendo a crédito, que es deuda y no dinero que ya salió. */
+function gastoPorPago(p) {
+  const ms = movsDelPeriodo(p).filter((m) => m.tipo === 'egreso');
+  const tarjetas = compAmbito().tarjetas || [];
+  const porTarjeta = new Map();
+  let efectivo = 0;
+  let debito = 0;
+  let otros = 0;
+
+  for (const m of ms) {
+    // Una mensualidad sabe de qué tarjeta es aunque el movimiento no lo diga:
+    // la compra a meses lo guarda. Sin esto caería en "sin especificar".
+    let tid = m.tarjetaId || null;
+    if (!tid && m.origen && m.origen.tipo === 'msi') {
+      const compra = (compAmbito().msi || []).find((x) => x.id === m.origen.id);
+      if (compra && compra.tarjetaId) tid = compra.tarjetaId;
+    }
+    if (tid) { porTarjeta.set(tid, (porTarjeta.get(tid) || 0) + m.centavos); continue; }
+    if (m.pago === 'debito') debito += m.centavos;
+    else if (m.pago === 'efectivo') efectivo += m.centavos;
+    else otros += m.centavos;   // pagos de compromisos y lo capturado antes
+  }
+
+  const filas = [];
+  if (efectivo > 0) filas.push({ nombre: 'Efectivo', centavos: efectivo });
+  if (debito > 0) filas.push({ nombre: 'Débito', centavos: debito });
+  for (const t of tarjetas) {
+    const c = porTarjeta.get(t.id) || 0;
+    if (c > 0) filas.push({ nombre: t.nombre, centavos: c, tarjetaId: t.id });
+  }
+  if (otros > 0) filas.push({ nombre: 'Sin especificar', centavos: otros });
+  return filas.sort((a, b) => b.centavos - a.centavos);
+}
+
+function pintarPorPago(p) {
+  const el = $('#barsPago');
+  if (!el) return;
+  const filas = gastoPorPago(p);
+  el.className = 'bars out';
+  el.innerHTML = '';
+  if (filas.length === 0) {
+    el.innerHTML = '<p class="empty">Nada que salió este mes.</p>';
+    return;
+  }
+
+  const total = filas.reduce((a, b) => a + b.centavos, 0);
+  const max = filas[0].centavos;
+  const conCredito = filas.filter((f) => f.tarjetaId).reduce((a, b) => a + b.centavos, 0);
+
+  for (const f of filas) {
+    const row = document.createElement('div');
+    row.className = 'bar';
+    const top = document.createElement('div');
+    top.className = 'bar-top';
+
+    // El nombre de una tarjeta lleva a su pantalla, donde está todo lo suyo.
+    let name;
+    if (f.tarjetaId) {
+      name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'enlace';
+      name.setAttribute('aria-label', `Ver todo lo de ${f.nombre}`);
+      name.addEventListener('click', () => abrirTarjeta(f.tarjetaId));
+    } else {
+      name = document.createElement('span');
+    }
+    name.textContent = f.nombre;
+
+    const val = document.createElement('b');
+    val.textContent = money(f.centavos);
+    top.append(name, val);
+
+    const track = document.createElement('div');
+    track.className = 'bar-track';
+    const fill = document.createElement('div');
+    fill.className = 'bar-fill';
+    fill.style.width = Math.max(3, Math.round((f.centavos / max) * 100)) + '%';
+    track.appendChild(fill);
+    row.append(top, track);
+    el.appendChild(row);
+  }
+
+  const pie = document.createElement('p');
+  pie.className = 'note';
+  pie.textContent = conCredito > 0
+    ? `De los ${money(total)} que salieron, ${money(conCredito)} fueron con tarjeta de crédito — eso es deuda, todavía no sale del banco. Toca el nombre de una tarjeta para ver todo lo suyo.`
+    : `Este mes no cargaste nada a crédito.`;
+  el.appendChild(pie);
+}
+
 function ficha(k, v, lect, cls, ancho) {
   const d = document.createElement('div');
   d.className = 'kpi' + (ancho ? ' ancho' : '');
@@ -834,6 +926,7 @@ function pintarSalud() {
   pintarTendencia(p);
   pintarBarras('#barsIn', ms, 'ingreso');
   pintarBarras('#barsOut', ms, 'egreso');
+  pintarPorPago(p);
 }
 
 function moverMes(delta) {
