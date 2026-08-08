@@ -517,6 +517,45 @@ ok($('#lista').textContent.includes('Resina'), 'un respaldo vacío NO borra lo q
 await irA('compromisos');
 ok($('#listaTarjetas').textContent.includes('BBVA'), 'ni se lleva los compromisos');
 
+/* ── 18. La tarjeta nueva aparece sin buscarla ──────── */
+
+console.log('\n18. La tarjeta nueva aparece sola');
+
+// Dejar la captura puesta en "Salió" y salirse de esa pantalla.
+await irA('capturar');
+tap($('.seg[data-tipo="egreso"]'));
+await esperar(90);
+const chipsAntes = $$('#chipsPago .chip').map((c) => c.textContent);
+ok(!chipsAntes.includes('Banorte'), 'todavía no existe la tarjeta Banorte');
+
+// Registrarla en Compromisos, sin volver a tocar Entró/Salió.
+await irA('compromisos');
+escribir('#tarNombre', 'Banorte');
+escribir('#tarDiaCorte', '5');
+escribir('#tarDiaPago', '20');
+enviar('#formTarjeta');
+await esperar(300);
+
+await irA('capturar');
+const chipsDespues = $$('#chipsPago .chip').map((c) => c.textContent);
+ok(chipsDespues.includes('Banorte'), `la tarjeta recién registrada ya sale como forma de pago (${chipsDespues.join(', ')})`);
+ok($('#pagoNota').hidden === true, 'y sin el aviso de "regístrala primero"');
+
+// Donde no hay tarjetas, el aviso dice dónde se registran.
+tap($('.amb[data-amb="personal"]'));
+await esperar(220);
+await irA('capturar');
+tap($('.seg[data-tipo="egreso"]'));
+await esperar(90);
+const chipsPersonal = $$('#chipsPago .chip').map((c) => c.textContent);
+ok(chipsPersonal.length === 2, `sin tarjetas quedan solo efectivo y débito (${chipsPersonal.join(', ')})`);
+ok($('#pagoNota').hidden === false, 'y aparece el aviso de dónde registrarla');
+
+// Un ingreso no se paga con nada: la pregunta desaparece.
+tap($('.seg[data-tipo="ingreso"]'));
+await esperar(90);
+ok($('#pagoCon').hidden === true, 'al registrar una entrada no pregunta forma de pago');
+
 /* ── Resultado ──────────────────────────────────────── */
 
 console.log(`\n${'─'.repeat(58)}`);

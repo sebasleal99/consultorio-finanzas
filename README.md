@@ -38,7 +38,7 @@ La app **no tiene dependencias**. Las de `package.json` son solo para probarla.
 
 ```
 npm install
-npm test           # 122 comprobaciones del flujo completo, con DOM e IndexedDB falsos
+npm test           # 128 comprobaciones del flujo completo, con DOM e IndexedDB falsos
 npm run icons      # regenera los PNG desde tools/gen-icons.mjs
 ```
 

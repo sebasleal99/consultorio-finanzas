@@ -446,6 +446,11 @@ function pintarChipsPago() {
     estado.pagoSel = 'efectivo';
   }
 
+  // Sin tarjetas registradas no hay chip de crédito, y eso desconcierta:
+  // el aviso dice dónde se registra en vez de dejarte buscando el botón.
+  const nota = $('#pagoNota');
+  if (nota) nota.hidden = tarjetas.length > 0;
+
   cont.innerHTML = '';
   const opciones = FORMAS_SUELTAS.map((f) => ({ id: f, nombre: NOMBRE_FORMA[f] }))
     .concat(tarjetas.map((t) => ({ id: t.id, nombre: t.nombre, credito: true })));
@@ -1368,6 +1373,9 @@ function pintarCompromisos() {
   pintarSelectTarjetas();
   pintarNotifBox();
   pintarTarjeta();
+  // Si acabas de registrar o borrar una tarjeta, la forma de pago de la
+  // pantalla de capturar tiene que enterarse.
+  pintarChipsPago();
 }
 
 /* ── Pintado: detalle de una tarjeta ────────────────── */
@@ -1996,6 +2004,8 @@ function ir(nombre) {
     t.setAttribute('aria-selected', String(on));
   });
   window.scrollTo(0, 0);
+  // Las tarjetas pudieron cambiar mientras andabas en otra pantalla.
+  if (nombre === 'capturar') pintarChipsPago();
   if (nombre === 'salud') pintarSalud();
   if (nombre === 'historial') pintarHistorial();
   if (nombre === 'tarjeta') pintarTarjeta();
